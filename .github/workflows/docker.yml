@@ -2,14 +2,16 @@ name: docker
 
 # Builds the nsld multi-arch Docker image and pushes it to Docker Hub.
 #
-# Triggered AFTER `release.yml` has published a GitHub Release with
-# binary assets attached — we download the static-musl `nsld-linux-*`
-# tarballs from that release and just COPY the binaries into the
-# image. No Rust toolchain, no QEMU-emulated compilation; multi-arch
-# builds finish in a couple of minutes.
+# **Manual trigger only.** A `release: published` trigger was tried but
+# events fired by `GITHUB_TOKEN` (which is what release.yml uses to
+# create the GitHub Release) do not cascade to other workflows by GHA
+# design — see the docs on "Workflow runs from workflow events". So
+# we leave docker publishes as an explicit operator action:
 #
-# Manual dispatch: pass an existing release tag whose assets are
-# already published.
+#     gh workflow run docker --repo nsiod/nsl -f tag=v0.1.5
+#
+# Pass an existing release tag whose `nsld-linux-x64.tar.gz` and
+# `nsld-linux-arm64.tar.gz` assets are already on the GitHub Release.
 #
 # Required repo secrets:
 #   DOCKER_USER : Docker Hub account name
@@ -18,8 +20,6 @@ name: docker
 # Image: docker.io/nsiod/nsld:<version> + :latest
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       tag:
@@ -42,11 +42,7 @@ jobs:
         id: tag
         run: |
           set -eu
-          if [ "${{ github.event_name }}" = "release" ]; then
-            name="${{ github.event.release.tag_name }}"
-          else
-            name="${{ github.event.inputs.tag }}"
-          fi
+          name="${{ github.event.inputs.tag }}"
           echo "name=$name" >> "$GITHUB_OUTPUT"
 
       - name: Download nsld binaries from release
