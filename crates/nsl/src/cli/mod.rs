@@ -221,6 +221,35 @@ impl Cli {
     }
 }
 
+/// Known top-level subcommands. When the first positional argument is not in
+/// this list (and is not a help/version flag), `parse_args` injects an
+/// implicit `run` so `nsl bun run dev` works the same as `nsl run bun run dev`.
+const SUBCOMMANDS: &[&str] = &[
+    "run", "start", "stop", "reload", "logs", "route", "get", "list", "status", "trust", "hosts",
+    "tunnel", "help",
+];
+
+/// Parse argv, injecting an implicit `run` subcommand when the first
+/// positional argument doesn't match a known subcommand. Pass-through
+/// flags consumed by the wrapper (`-h`, `--help`, `-V`, `--version`) keep
+/// their normal clap behaviour.
+pub fn parse_args<I, T>(argv: I) -> Cli
+where
+    I: IntoIterator<Item = T>,
+    T: Into<std::ffi::OsString> + Clone,
+{
+    let mut args: Vec<std::ffi::OsString> = argv.into_iter().map(Into::into).collect();
+    if args.len() >= 2 {
+        let first = args[1].to_string_lossy().to_string();
+        let is_subcommand = SUBCOMMANDS.contains(&first.as_str());
+        let is_global_flag = matches!(first.as_str(), "-h" | "--help" | "-V" | "--version");
+        if !is_subcommand && !is_global_flag {
+            args.insert(1, std::ffi::OsString::from("run"));
+        }
+    }
+    Cli::parse_from(args)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -277,6 +306,45 @@ mod tests {
         assert!(help.contains("nsl route api 3001"));
         assert!(help.contains("nsl route shop:/api 3001 --strip"));
         assert!(help.contains("/api/users becomes /users"));
+    }
+
+    #[test]
+    fn test_parse_args_injects_run_for_unknown_first_arg() {
+        let cli = parse_args(["nsl", "bun", "run", "dev"]);
+        match cli.command {
+            Commands::Run { cmd, .. } => {
+                assert_eq!(cmd, vec!["bun", "run", "dev"]);
+            }
+            _ => panic!("expected Run command"),
+        }
+    }
+
+    #[test]
+    fn test_parse_args_preserves_explicit_run() {
+        let cli = parse_args(["nsl", "run", "vite"]);
+        match cli.command {
+            Commands::Run { cmd, .. } => {
+                assert_eq!(cmd, vec!["vite"]);
+            }
+            _ => panic!("expected Run command"),
+        }
+    }
+
+    #[test]
+    fn test_parse_args_does_not_inject_for_known_subcommand() {
+        let cli = parse_args(["nsl", "list"]);
+        assert!(matches!(cli.command, Commands::List));
+    }
+
+    #[test]
+    fn test_parse_args_implicit_run_with_path_command() {
+        let cli = parse_args(["nsl", "./server.sh", "--port", "NSL_PORT"]);
+        match cli.command {
+            Commands::Run { cmd, .. } => {
+                assert_eq!(cmd, vec!["./server.sh", "--port", "NSL_PORT"]);
+            }
+            _ => panic!("expected Run command"),
+        }
     }
 
     #[test]

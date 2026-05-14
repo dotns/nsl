@@ -4,8 +4,6 @@
 #![cfg_attr(all(not(test), not(windows)), forbid(unsafe_code))]
 #![cfg_attr(test, deny(unsafe_code))]
 
-use clap::Parser;
-
 mod certs;
 mod cli;
 mod config;
@@ -25,7 +23,7 @@ mod utils;
 fn main() -> anyhow::Result<()> {
     npx_guard::check_npx_execution();
 
-    let cli = cli::Cli::parse();
+    let cli = cli::parse_args(std::env::args_os());
 
     // The daemonize subcommand must fork BEFORE any tokio runtime exists --
     // forking an active runtime leaves the child with corrupt worker state.
