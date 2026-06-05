@@ -5,11 +5,11 @@ const { spawnSync } = require("node:child_process");
 const { existsSync } = require("node:fs");
 
 const PLATFORM_PACKAGES = {
-  "linux-x64": "@nsio/nsl-linux-x64",
-  "linux-arm64": "@nsio/nsl-linux-arm64",
-  "darwin-x64": "@nsio/nsl-darwin-x64",
-  "darwin-arm64": "@nsio/nsl-darwin-arm64",
-  "win32-x64": "@nsio/nsl-win32-x64",
+  "linux-x64": "@dotns/nsl-linux-x64",
+  "linux-arm64": "@dotns/nsl-linux-arm64",
+  "darwin-x64": "@dotns/nsl-darwin-x64",
+  "darwin-arm64": "@dotns/nsl-darwin-arm64",
+  "win32-x64": "@dotns/nsl-win32-x64",
 };
 
 function resolveBinary() {

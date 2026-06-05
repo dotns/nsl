@@ -10,7 +10,7 @@ use crate::config::Config;
     name = "nsl",
     version,
     about,
-    after_help = "Documentation:\n  README: https://github.com/nsiod/nsl/blob/main/README.md\n  AI usage guide: https://github.com/nsiod/nsl/blob/main/llms.txt"
+    after_help = "Documentation:\n  README: https://github.com/dotns/nsl/blob/main/README.md\n  AI usage guide: https://github.com/dotns/nsl/blob/main/llms.txt"
 )]
 pub struct Cli {
     #[command(subcommand)]
@@ -290,8 +290,8 @@ mod tests {
         let help = String::from_utf8(help).unwrap();
 
         assert!(help.contains("Documentation:"));
-        assert!(help.contains("https://github.com/nsiod/nsl/blob/main/README.md"));
-        assert!(help.contains("https://github.com/nsiod/nsl/blob/main/llms.txt"));
+        assert!(help.contains("https://github.com/dotns/nsl/blob/main/README.md"));
+        assert!(help.contains("https://github.com/dotns/nsl/blob/main/llms.txt"));
     }
 
     #[test]

@@ -315,8 +315,8 @@ Multi-arch (linux/amd64 + linux/arm64) image, built on Alpine 3.22
 with ca-certificates + tini as PID-1. Published by `.github/workflows/docker.yml`:
 
 ```
-docker.io/nsiod/nsld:<version>      # e.g. nsiod/nsld:v0.1.5
-docker.io/nsiod/nsld:latest
+docker.io/dotns/nsld:<version>      # e.g. dotns/nsld:v0.1.5
+docker.io/dotns/nsld:latest
 ```
 
 ```bash
@@ -325,7 +325,7 @@ mkdir -p data
 docker run -d --name nsld \
   -p 80:80 -p 443:443 -p 443:443/udp \
   -v "$PWD/data:/data" \
-  nsiod/nsld:latest serve
+  dotns/nsld:latest serve
 ```
 
 Notes:

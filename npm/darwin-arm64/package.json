@@ -1,12 +1,12 @@
 {
-  "name": "@nsio/nsl-darwin-arm64",
+  "name": "@dotns/nsl-darwin-arm64",
   "version": "0.1.7",
   "description": "macOS aarch64 binary for nsl",
   "license": "Apache-2.0",
-  "homepage": "https://github.com/nsiod/nsl",
+  "homepage": "https://github.com/dotns/nsl",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nsiod/nsl.git"
+    "url": "git+https://github.com/dotns/nsl.git"
   },
   "os": [
     "darwin"

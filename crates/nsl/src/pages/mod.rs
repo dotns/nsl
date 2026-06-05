@@ -180,7 +180,7 @@ pre code {{
   </div>
 </div>
 <div class="footer">
-  Powered by <a href="https://github.com/nsiod/nsl">NSL</a>
+  Powered by <a href="https://github.com/dotns/nsl">NSL</a>
 </div>
 </body>
 </html>"#,

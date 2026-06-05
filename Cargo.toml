@@ -9,10 +9,10 @@ members = [
 [workspace.package]
 version = "0.1.7"
 edition = "2024"
-authors = ["nkcore ltd"]
+authors = ["NetSeed Ltd"]
 license = "Apache-2.0"
-repository = "https://github.com/nsiod/nsl"
-homepage = "https://github.com/nsiod/nsl"
+repository = "https://github.com/dotns/nsl"
+homepage = "https://github.com/dotns/nsl"
 
 [workspace.dependencies]
 tokio = { version = "1", features = ["full"] }

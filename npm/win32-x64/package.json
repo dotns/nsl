@@ -1,12 +1,12 @@
 {
-  "name": "@nsio/nsl-win32-x64",
+  "name": "@dotns/nsl-win32-x64",
   "version": "0.1.7",
   "description": "Windows x86_64 binary for nsl",
   "license": "Apache-2.0",
-  "homepage": "https://github.com/nsiod/nsl",
+  "homepage": "https://github.com/dotns/nsl",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nsiod/nsl.git"
+    "url": "git+https://github.com/dotns/nsl.git"
   },
   "os": [
     "win32"

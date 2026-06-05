@@ -5,15 +5,15 @@ It runs one local proxy and routes requests by host name and optional path prefi
 
 Primary docs:
 
-- README: https://github.com/nsiod/nsl/blob/main/README.md
-- Repository: https://github.com/nsiod/nsl
+- README: https://github.com/dotns/nsl/blob/main/README.md
+- Repository: https://github.com/dotns/nsl
 
 ## Install and invocation
 
 Install from npm:
 
 ```bash
-npm install -g @nsio/nsl
+npm install -g @dotns/nsl
 ```
 
 Use the installed binary directly:

@@ -25,7 +25,7 @@ A modern dev setup runs a handful of processes — web, API, DB admin, Storybook
 Via npm (picks the right prebuilt binary for your OS/arch):
 
 ```bash
-npm i -g @nsio/nsl
+npm i -g @dotns/nsl
 ```
 
 From source:
@@ -413,7 +413,7 @@ nsl stop
 sudo nsl hosts clean      # if you ever ran `nsl hosts sync`
 rm -rf ~/.nsl             # CA, routes, logs
 sudo rm -rf /tmp/nsl      # only if you ran the proxy on a privileged port
-npm uninstall -g @nsio/nsl
+npm uninstall -g @dotns/nsl
 ```
 
 If you plan to use HTTPS again afterward, re-run `sudo nsl trust` — the old CA was wiped with the state directory.

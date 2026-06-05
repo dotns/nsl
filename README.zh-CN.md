@@ -25,7 +25,7 @@
 走 npm(按你的 OS/arch 自动拉预编译二进制):
 
 ```bash
-npm i -g @nsio/nsl
+npm i -g @dotns/nsl
 ```
 
 从源码构建:
@@ -412,7 +412,7 @@ nsl stop
 sudo nsl hosts clean      # 如果跑过 nsl hosts sync
 rm -rf ~/.nsl             # CA、路由、日志
 sudo rm -rf /tmp/nsl      # 仅在用过特权端口时
-npm uninstall -g @nsio/nsl
+npm uninstall -g @dotns/nsl
 ```
 
 如果之后还要用 HTTPS,重新 `sudo nsl trust` —— 旧 CA 跟状态目录一起没了。

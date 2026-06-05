@@ -8,7 +8,7 @@ name: docker
 # design — see the docs on "Workflow runs from workflow events". So
 # we leave docker publishes as an explicit operator action:
 #
-#     gh workflow run docker --repo nsiod/nsl -f tag=v0.1.5
+#     gh workflow run docker --repo dotns/nsl -f tag=v0.1.5
 #
 # Pass an existing release tag whose `nsld-linux-x64.tar.gz` and
 # `nsld-linux-arm64.tar.gz` assets are already on the GitHub Release.
@@ -17,7 +17,7 @@ name: docker
 #   DOCKER_USER : Docker Hub account name
 #   DOCKER_PWD  : Docker Hub access token (Account Settings → Security)
 #
-# Image: docker.io/nsiod/nsld:<version> + :latest
+# Image: docker.io/dotns/nsld:<version> + :latest
 
 on:
   workflow_dispatch:
@@ -27,7 +27,7 @@ on:
         required: true
 
 env:
-  IMAGE_NAME: nsiod/nsld
+  IMAGE_NAME: dotns/nsld
 
 jobs:
   push:
