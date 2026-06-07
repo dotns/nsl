@@ -193,6 +193,7 @@ CA 在第一次启动时生成,自动信任 macOS(Keychain)、Linux(`update-ca-c
 
 ```
 nsl run [FLAGS] <CMD>...       以代理路由方式启动进程。
+nsl serve [FLAGS] [DIR]        以代理路由方式托管静态目录。
 nsl start [FLAGS]              启动代理守护进程。
 nsl stop                       停止代理守护进程。
 nsl reload                     先停后启,重新读配置。
@@ -214,6 +215,35 @@ nsl hosts sync | clean         同步路由主机名到 /etc/hosts。
 | `-s, --strip`             | 转发前剥掉匹配到的前缀。                                |
 | `-c, --change-origin`     | 把外发请求的 `Host` 头改写为目标地址。                  |
 | `-f, --force`             | 抢走别的进程正在占着的同名路由。                        |
+
+### 托管静态文件
+
+`nsl serve [DIR]` 用一个稳定的名字托管一个静态文件目录——不需要再单独跑文件服务器。
+它会在内部起一个 HTTP 服务(和代理同一套引擎),绑定到自动分配的端口、注册路由,
+并托管 `DIR`(默认当前目录),直到你按 Ctrl-C。名字的推断方式和 `nsl run` 一致,
+也可以用 `--name` 指定。
+
+```bash
+nsl serve ./dist                       # -> http://dist.localhost:3355
+nsl serve ./dist --spa                 # SPA:未命中的路径回退到 index.html
+nsl serve ./files --list               # 用 HTML 索引浏览目录
+nsl serve --name docs:/guide ./site --strip   # 挂到 /guide 下并剥掉前缀
+```
+
+`--spa` 针对单页应用:任何匹配不到文件的路径都返回 `index.html`(状态码 `200`),
+这样深链接和刷新时客户端路由仍然可用。`--list` 为没有 `index.html` 的目录开启
+HTML 目录列表(默认关闭)。文件托管自带 content-type 识别和 HTTP range 请求;
+路径挂载与 `--strip` 的行为与 `nsl run` 完全一致。没有 `--port`:`nsl serve`
+本身就是服务端,端口总是从 `[app].port_range` 自动分配——你只需要用稳定的
+`.localhost` URL。
+
+| 参数                      | 说明                                          |
+| ------------------------- | --------------------------------------------- |
+| `-n, --name NAME[:/PATH]` | 覆盖自动推断的名字(可带路径前缀)。          |
+| `--spa`                   | 未命中的路径返回 `index.html`(SPA 路由)。   |
+| `-l, --list`              | 为没有 index.html 的目录显示 HTML 目录列表。  |
+| `-s, --strip`             | 托管前剥掉匹配到的前缀。                      |
+| `-f, --force`             | 抢走别的进程正在占着的同名路由。              |
 
 ### `nsl start` 参数
 
@@ -262,7 +292,7 @@ nsl route api --remove
 | `-s, --strip`         | 转发前剥掉匹配到的路径前缀。              |
 | `-c, --change-origin` | 把外发请求的 `Host` 头改写为目标地址。    |
 
-> **保留字:** `run`、`start`、`stop`、`reload`、`logs`、`route`、`get`、`list`、`status`、`trust`、`hosts`。项目名不巧撞到保留字,用 `nsl run --name <name> <cmd>`。
+> **保留字:** `run`、`serve`、`start`、`stop`、`reload`、`logs`、`route`、`get`、`list`、`status`、`trust`、`hosts`。项目名不巧撞到保留字,用 `nsl run --name <name> <cmd>`。
 
 ## 配置
 

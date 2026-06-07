@@ -50,6 +50,28 @@ pub(super) async fn handle(cli: Cli) -> anyhow::Result<()> {
             )
             .await
         }
+        Commands::Serve {
+            dir,
+            name,
+            force,
+            spa,
+            list,
+            strip,
+        } => {
+            if force {
+                config.app_force = true;
+            }
+            let (bare_name, path) = match name.as_deref() {
+                Some(raw) => {
+                    let (n, p) = crate::utils::split_name_path(raw);
+                    (Some(n), p)
+                }
+                None => (None, "/".to_string()),
+            };
+            let dir = dir.unwrap_or_else(|| std::path::PathBuf::from("."));
+            crate::serve::serve_app(&config, &dir, bare_name.as_deref(), &path, strip, spa, list)
+                .await
+        }
         Commands::Start {
             listen,
             https,

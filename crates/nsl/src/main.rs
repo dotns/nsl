@@ -16,6 +16,7 @@ mod platform;
 mod proxy;
 mod routes;
 mod run;
+mod serve;
 mod status;
 mod tunnel;
 mod utils;

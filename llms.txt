@@ -57,6 +57,25 @@ nsl run --name shop:/api --strip npm run api
 With `--strip`, a browser request for `/api/users` is forwarded to the upstream
 as `/users`. Without `--strip`, the upstream receives `/api/users`.
 
+Serve a directory of static files behind a stable name (no separate file
+server needed):
+
+```bash
+nsl serve ./dist
+nsl serve ./dist --spa
+nsl serve ./files --list
+nsl serve --name docs:/guide ./site --strip
+```
+
+`nsl serve [DIR]` serves `DIR` (default: current directory) with an in-process
+static file server, inferring the name like `nsl run`. Use `--spa` for
+single-page apps: unmatched paths return `index.html` with a `200` status so
+client-side routing survives deep links and refreshes. Use `--list` to show an
+HTML directory listing for folders without an `index.html` (off by default).
+`--name`, path mounting (`NAME:/PATH`), `--strip`, and `--force` behave as they
+do for `nsl run`. There is no `--port`: `nsl serve` is the server itself, so it
+always allocates a port from `[app].port_range` automatically.
+
 Print the stable URL for automation:
 
 ```bash

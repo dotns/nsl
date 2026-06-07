@@ -11,7 +11,9 @@ use std::sync::{
 
 #[cfg(unix)]
 use framework::wait_for_app_wrapped;
-use framework::{find_free_port, inject_framework_flags, replace_port_placeholders};
+use framework::{inject_framework_flags, replace_port_placeholders};
+
+pub(crate) use framework::find_free_port;
 
 /// Check if nsl proxy is disabled via the NSL environment variable.
 ///

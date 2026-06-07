@@ -1,5 +1,7 @@
 mod handler;
 
+use std::path::PathBuf;
+
 use clap::{Parser, Subcommand};
 
 use crate::config::Config;
@@ -46,6 +48,36 @@ pub(super) enum Commands {
         change_origin: bool,
 
         /// Strip the path prefix (from name like `myapp:/api`) before forwarding
+        #[arg(short, long)]
+        strip: bool,
+    },
+
+    /// Serve a static directory through the proxy
+    #[command(
+        after_help = "Examples:\n  nsl serve ./dist\n  nsl serve ./dist --spa\n  nsl serve ./files --list\n  nsl serve --name docs:/guide ./site --strip\n\nSPA fallback:\n  --spa serves index.html for paths that don't match a file (client-side routing).\n\nDirectory listing:\n  --list shows an HTML index for folders that have no index.html."
+    )]
+    Serve {
+        /// Directory to serve (default: current directory)
+        dir: Option<PathBuf>,
+
+        /// Override the auto-inferred name, optionally with a path prefix
+        /// (e.g. `docs` or `site:/guide`)
+        #[arg(short, long)]
+        name: Option<String>,
+
+        /// Override a route registered by another process
+        #[arg(short, long)]
+        force: bool,
+
+        /// Serve index.html for unmatched paths (single-page app routing)
+        #[arg(long)]
+        spa: bool,
+
+        /// Show an HTML directory listing for folders without an index.html
+        #[arg(short, long)]
+        list: bool,
+
+        /// Strip the path prefix (from name like `site:/guide`) before serving
         #[arg(short, long)]
         strip: bool,
     },
@@ -225,8 +257,8 @@ impl Cli {
 /// this list (and is not a help/version flag), `parse_args` injects an
 /// implicit `run` so `nsl bun run dev` works the same as `nsl run bun run dev`.
 const SUBCOMMANDS: &[&str] = &[
-    "run", "start", "stop", "reload", "logs", "route", "get", "list", "status", "trust", "hosts",
-    "tunnel", "help",
+    "run", "serve", "start", "stop", "reload", "logs", "route", "get", "list", "status", "trust",
+    "hosts", "tunnel", "help",
 ];
 
 /// Parse argv, injecting an implicit `run` subcommand when the first

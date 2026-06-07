@@ -193,6 +193,7 @@ The CA is generated on first run and trusted on macOS (Keychain), Linux (`update
 
 ```
 nsl run [FLAGS] <CMD>...       Launch a process behind a proxied route.
+nsl serve [FLAGS] [DIR]        Serve a static directory behind a proxied route.
 nsl start [FLAGS]              Start the proxy daemon.
 nsl stop                       Stop the proxy daemon.
 nsl reload                     Stop + start, re-reading config.
@@ -214,6 +215,38 @@ nsl hosts sync | clean         Sync route hostnames to /etc/hosts.
 | `-s, --strip`             | Strip the matched prefix before forwarding.               |
 | `-c, --change-origin`     | Rewrite the outgoing `Host` header to the target address. |
 | `-f, --force`             | Take over a route currently held by another process.      |
+
+### Serving static files
+
+`nsl serve [DIR]` serves a directory of static files behind a stable name —
+no separate file server needed. It binds an in-process HTTP server (built on
+the same engine as the proxy) to an allocated port, registers the route, and
+serves `DIR` (default: the current directory) until you press Ctrl-C. The name
+is inferred the same way as `nsl run`, or set it with `--name`.
+
+```bash
+nsl serve ./dist                       # -> http://dist.localhost:3355
+nsl serve ./dist --spa                 # SPA: unmatched paths fall back to index.html
+nsl serve ./files --list               # browse folders with an HTML index
+nsl serve --name docs:/guide ./site --strip   # mount under /guide, strip the prefix
+```
+
+`--spa` is for single-page apps: any path that doesn't match a file is served
+`index.html` with a `200` status, so client-side routing works on deep links
+and refreshes. `--list` turns on an HTML directory listing for folders that have
+no `index.html` (off by default). Files are served with content-type detection
+and HTTP range requests; path mounting and `--strip` behave exactly as they do
+for `nsl run`. There is no `--port`: `nsl serve` is itself the server, so it
+always allocates a port from `[app].port_range` — you only ever use the stable
+`.localhost` URL.
+
+| Flag                      | Description                                            |
+| ------------------------- | ----------------------------------------------------- |
+| `-n, --name NAME[:/PATH]` | Override the inferred name (and optional path prefix). |
+| `--spa`                   | Serve `index.html` for unmatched paths (SPA routing). |
+| `-l, --list`              | Show an HTML directory listing for index-less folders. |
+| `-s, --strip`             | Strip the matched prefix before serving.              |
+| `-f, --force`             | Take over a route currently held by another process.  |
 
 ### `nsl start` flags
 
@@ -263,7 +296,7 @@ target as `/users`.
 | `-s, --strip`         | Strip the matched path prefix before forwarding.          |
 | `-c, --change-origin` | Rewrite the outgoing `Host` header to the target address. |
 
-> **Reserved words:** `run`, `start`, `stop`, `reload`, `logs`, `route`, `get`, `list`, `status`, `trust`, `hosts`. Use `nsl run --name <name> <cmd>` if a reserved word collides with your project name.
+> **Reserved words:** `run`, `serve`, `start`, `stop`, `reload`, `logs`, `route`, `get`, `list`, `status`, `trust`, `hosts`. Use `nsl run --name <name> <cmd>` if a reserved word collides with your project name.
 
 ## Configuration
 
