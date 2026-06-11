@@ -22,7 +22,22 @@ A modern dev setup runs a handful of processes — web, API, DB admin, Storybook
 
 ## Install
 
-Via npm (picks the right prebuilt binary for your OS/arch):
+Quick install (Linux/macOS) — downloads the right prebuilt binary for your
+OS/arch from the latest GitHub release into `/usr/local/bin`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dotns/nsl/main/install.sh | sh
+# or: wget -qO- https://raw.githubusercontent.com/dotns/nsl/main/install.sh | sh
+```
+
+Install somewhere else, or pin a version (pass args after `sh -s --`):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dotns/nsl/main/install.sh | sh -s -- --dir "$HOME/.local/bin"
+curl -fsSL https://raw.githubusercontent.com/dotns/nsl/main/install.sh | sh -s -- --version v0.1.9
+```
+
+Via npm (picks the right prebuilt binary for your OS/arch; works on Windows too):
 
 ```bash
 npm i -g @dotns/nsl

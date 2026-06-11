@@ -22,7 +22,21 @@
 
 ## 安装
 
-走 npm(按你的 OS/arch 自动拉预编译二进制):
+一行安装(Linux/macOS)——从最新 GitHub Release 拉取对应 OS/arch 的预编译二进制,装到 `/usr/local/bin`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dotns/nsl/main/install.sh | sh
+# 或:wget -qO- https://raw.githubusercontent.com/dotns/nsl/main/install.sh | sh
+```
+
+装到别的目录,或指定版本(参数放在 `sh -s --` 之后):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dotns/nsl/main/install.sh | sh -s -- --dir "$HOME/.local/bin"
+curl -fsSL https://raw.githubusercontent.com/dotns/nsl/main/install.sh | sh -s -- --version v0.1.9
+```
+
+走 npm(按你的 OS/arch 自动拉预编译二进制;Windows 也用这个):
 
 ```bash
 npm i -g @dotns/nsl
