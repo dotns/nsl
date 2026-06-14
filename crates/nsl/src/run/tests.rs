@@ -66,6 +66,58 @@ fn test_is_nsl_disabled_zero() {
     });
 }
 
+/// Poll the process group of `pid` until it matches `want` or the attempts run
+/// out. The child's `setpgid` happens between fork and exec, so the parent may
+/// observe the old group briefly.
+#[cfg(unix)]
+fn wait_for_pgid(pid: u32, want: u32) -> u32 {
+    for _ in 0..50 {
+        if let Some(pgid) = crate::platform::current_process_group(pid)
+            && pgid == want
+        {
+            return pgid;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    crate::platform::current_process_group(pid).unwrap_or(0)
+}
+
+/// Without an own group, the child stays in nsl's process group, so a
+/// supervisor's group-level cleanup (e.g. turbo) reaches it directly and it is
+/// not orphaned if nsl is force-killed.
+#[cfg(unix)]
+#[tokio::test]
+async fn spawn_wrapped_without_own_group_shares_parent_group() {
+    let args = vec!["sleep 30".to_string()];
+    let child = spawn_wrapped(&args, 0, "http://test.local", false).unwrap();
+    let pid = child.id().unwrap();
+
+    let my_pgid = nix::unistd::getpgrp().as_raw() as u32;
+    assert_eq!(crate::platform::current_process_group(pid), Some(my_pgid));
+
+    let _ = nix::sys::signal::kill(
+        nix::unistd::Pid::from_raw(pid as i32),
+        nix::sys::signal::Signal::SIGKILL,
+    );
+}
+
+/// With an own group (interactive use), the child leads a new process group so
+/// nsl can forward the terminal's Ctrl+C to the whole tree deliberately.
+#[cfg(unix)]
+#[tokio::test]
+async fn spawn_wrapped_with_own_group_is_leader() {
+    let args = vec!["sleep 30".to_string()];
+    let child = spawn_wrapped(&args, 0, "http://test.local", true).unwrap();
+    let pid = child.id().unwrap();
+
+    assert_eq!(wait_for_pgid(pid, pid), pid);
+
+    let _ = nix::sys::signal::killpg(
+        nix::unistd::Pid::from_raw(pid as i32),
+        nix::sys::signal::Signal::SIGKILL,
+    );
+}
+
 #[test]
 fn test_is_nsl_disabled_skip() {
     with_nsl_env(Some("skip"), || {

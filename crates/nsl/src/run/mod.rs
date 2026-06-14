@@ -275,20 +275,16 @@ pub async fn run_app(
     }
 }
 
-/// Spawn a child process with signal forwarding. On Unix the child is
-/// placed in its own process group so we can signal the whole tree; on
-/// Windows we use a plain tokio `Child` and kill it on Ctrl+C.
+/// Build and spawn the wrapped shell command. When `own_group` is true the
+/// child becomes the leader of a new process group; otherwise it stays in
+/// nsl's own process group.
 #[cfg(unix)]
-async fn spawn_command(
+fn spawn_wrapped(
     args: &[String],
     port: u16,
     url: &str,
-    config: &Config,
-    original_cmd: &[String],
-    hostname: &str,
-    path: &str,
-    on_child_spawned: impl FnOnce(u32) -> anyhow::Result<()>,
-) -> anyhow::Result<i32> {
+    own_group: bool,
+) -> std::io::Result<Box<dyn process_wrap::tokio::ChildWrapper>> {
     use process_wrap::tokio::*;
 
     let shell_cmd = shell_command_line(args);
@@ -303,27 +299,64 @@ async fn spawn_command(
             .env("NSL", "1");
     });
 
-    wrap.wrap(ProcessGroup::leader());
+    if own_group {
+        wrap.wrap(ProcessGroup::leader());
+    }
 
-    let mut child = wrap.spawn()?;
+    wrap.spawn()
+}
+
+/// Terminate the child. When it is its own process group leader we signal the
+/// whole group; otherwise it shares nsl's group, so we signal only the child
+/// PID and let the parent's group cleanup reach the rest of the tree.
+#[cfg(unix)]
+fn terminate_child(own_group: bool, child_pid: u32) {
+    let nix_pid = nix::unistd::Pid::from_raw(child_pid as i32);
+    let _ = if own_group {
+        nix::sys::signal::killpg(nix_pid, nix::sys::signal::Signal::SIGTERM)
+    } else {
+        nix::sys::signal::kill(nix_pid, nix::sys::signal::Signal::SIGTERM)
+    };
+}
+
+/// Spawn a child process with signal forwarding.
+///
+/// When nsl runs interactively (stdin is a TTY), the child is placed in its
+/// own process group so the terminal's Ctrl+C reaches only nsl, which then
+/// forwards the signal deliberately. When nsl runs under a supervisor such as
+/// a task runner (turbo, pnpm), stdin is a pipe: keeping the child in nsl's
+/// own process group lets the supervisor's process-group cleanup reach the
+/// child directly, so it is not orphaned even if nsl is force-killed.
+///
+/// On Windows we use a plain tokio `Child` and kill it on Ctrl+C.
+#[cfg(unix)]
+async fn spawn_command(
+    args: &[String],
+    port: u16,
+    url: &str,
+    config: &Config,
+    original_cmd: &[String],
+    hostname: &str,
+    path: &str,
+    on_child_spawned: impl FnOnce(u32) -> anyhow::Result<()>,
+) -> anyhow::Result<i32> {
+    use std::io::IsTerminal;
+
+    let own_group = std::io::stdin().is_terminal();
+
+    let mut child = spawn_wrapped(args, port, url, own_group)?;
 
     let child_pid = child.id().unwrap_or(0);
 
     if let Err(e) = on_child_spawned(child_pid) {
-        let _ = nix::sys::signal::killpg(
-            nix::unistd::Pid::from_raw(child_pid as i32),
-            nix::sys::signal::Signal::SIGTERM,
-        );
+        terminate_child(own_group, child_pid);
         return Err(e);
     }
 
     // Wait for app readiness
     if let Err(e) = wait_for_app_wrapped(port, config.ready_timeout, &mut child).await {
         tracing::error!("readiness check failed: {}", e);
-        let _ = nix::sys::signal::killpg(
-            nix::unistd::Pid::from_raw(child_pid as i32),
-            nix::sys::signal::Signal::SIGTERM,
-        );
+        terminate_child(own_group, child_pid);
         return Err(e);
     }
 
@@ -331,7 +364,6 @@ async fn spawn_command(
     print_connection_info(config, original_cmd, port, child_pid, hostname, path);
 
     // Set up signal forwarding and wait for child
-    let pgid = nix::unistd::Pid::from_raw(child_pid as i32);
     let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
     let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
 
@@ -343,12 +375,12 @@ async fn spawn_command(
             Ok(exit_code_from_status(status).unwrap_or(0))
         }
         _ = sigint.recv() => {
-            let _ = nix::sys::signal::killpg(pgid, nix::sys::signal::Signal::SIGTERM);
+            terminate_child(own_group, child_pid);
             let status = child.wait().await?;
             Ok(exit_code_from_status(status).unwrap_or(0))
         }
         _ = sigterm.recv() => {
-            let _ = nix::sys::signal::killpg(pgid, nix::sys::signal::Signal::SIGTERM);
+            terminate_child(own_group, child_pid);
             let status = child.wait().await?;
             Ok(exit_code_from_status(status).unwrap_or(0))
         }
