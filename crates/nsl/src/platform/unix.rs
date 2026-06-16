@@ -60,7 +60,7 @@ fn validate_app_owner(owner: &RouteOwner) -> anyhow::Result<()> {
         anyhow::bail!("route owner process is not alive");
     }
     match (owner.process_group, current_process_group(owner.pid)) {
-        (Some(expected), Some(actual)) if expected == actual && actual == owner.pid => {}
+        (Some(expected), Some(actual)) if expected == actual => {}
         (Some(expected), Some(actual)) => {
             anyhow::bail!(
                 "route owner process group changed: expected {}, got {}",
@@ -100,11 +100,19 @@ fn validate_app_owner(owner: &RouteOwner) -> anyhow::Result<()> {
 
 pub fn kill_app_process(owner: &RouteOwner) -> anyhow::Result<()> {
     validate_app_owner(owner)?;
-    nix::sys::signal::killpg(
-        nix::unistd::Pid::from_raw(owner.pid as i32),
-        nix::sys::signal::Signal::SIGTERM,
-    )
-    .map_err(|e| anyhow::anyhow!("failed to terminate app process group {}: {}", owner.pid, e))
+    let nix_pid = nix::unistd::Pid::from_raw(owner.pid as i32);
+    // Only signal the whole process group when the owner is its own group
+    // leader (recorded group id == pid). Otherwise it shares another group
+    // (e.g. nsl ran under a task runner), so we signal only the owner PID to
+    // avoid terminating unrelated processes in the shared group.
+    if owner.process_group == Some(owner.pid) {
+        nix::sys::signal::killpg(nix_pid, nix::sys::signal::Signal::SIGTERM).map_err(|e| {
+            anyhow::anyhow!("failed to terminate app process group {}: {}", owner.pid, e)
+        })
+    } else {
+        nix::sys::signal::kill(nix_pid, nix::sys::signal::Signal::SIGTERM)
+            .map_err(|e| anyhow::anyhow!("failed to terminate app process {}: {}", owner.pid, e))
+    }
 }
 
 /// Send SIGTERM to a process. Returns `Ok(())` on success.
@@ -190,4 +198,47 @@ pub(crate) fn detect_sudo_ids() -> Option<(nix::libc::uid_t, nix::libc::gid_t)> 
     let uid: nix::libc::uid_t = uid_str.parse().ok()?;
     let gid: nix::libc::gid_t = gid_str.parse().ok()?;
     Some((uid, gid))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A child that shares nsl's process group (not its own group leader) must
+    /// still be terminable: `kill_app_process` falls back to signalling the
+    /// single PID instead of bailing or killing the shared group.
+    #[test]
+    fn kill_app_process_terminates_non_leader_owner() {
+        let cwd = process_cwd(std::process::id()).unwrap_or_else(|| {
+            std::env::current_dir()
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()
+        });
+
+        let mut child = std::process::Command::new("sleep")
+            .arg("30")
+            .current_dir(&cwd)
+            .spawn()
+            .unwrap();
+        let pid = child.id();
+
+        let owner = RouteOwner {
+            pid,
+            platform: current_platform().to_string(),
+            cwd,
+            command: vec!["sleep".to_string(), "30".to_string()],
+            process_group: current_process_group(pid),
+            start_time: current_process_start_time(pid),
+        };
+
+        // The child inherits the test process's group, so it is not its own
+        // leader: recorded group id differs from its PID.
+        assert_ne!(owner.process_group, Some(pid));
+
+        kill_app_process(&owner).expect("non-leader owner should be killable via single PID");
+
+        let status = child.wait().unwrap();
+        assert!(!status.success(), "child should be terminated by SIGTERM");
+    }
 }
