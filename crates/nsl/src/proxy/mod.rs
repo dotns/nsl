@@ -24,6 +24,9 @@ pub(crate) const NSL_HOPS_HEADER: &str = "x-nsl-hops";
 /// Shared in-memory route cache, updated by the background polling task.
 pub(crate) type RouteCache = Arc<RwLock<Vec<RouteMapping>>>;
 
+/// Domain suffixes the proxy routes for. Fixed at startup from config.
+pub(crate) type SharedDomains = Arc<Vec<String>>;
+
 pub(super) type ProxyBody = BoxBody<Bytes, hyper::Error>;
 
 // ---------------------------------------------------------------------------

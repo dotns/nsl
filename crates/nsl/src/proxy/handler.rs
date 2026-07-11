@@ -7,8 +7,8 @@ use crate::routes::RouteMapping;
 
 use super::websocket::{handle_upgrade, is_upgrade_request};
 use super::{
-    NSL_HEADER, NSL_HOPS_HEADER, ProxyBody, RouteCache, html_response, path_matches_prefix,
-    response, strip_path_prefix,
+    NSL_HEADER, NSL_HOPS_HEADER, ProxyBody, RouteCache, SharedDomains, html_response,
+    path_matches_prefix, response, strip_path_prefix,
 };
 
 // ---------------------------------------------------------------------------
@@ -182,7 +182,7 @@ pub(super) async fn handle_request(
     proxy_port: u16,
     max_hops: u32,
     route_cache: RouteCache,
-    domains: crate::tunnel::SharedDomains,
+    domains: SharedDomains,
     is_tls: bool,
 ) -> Result<Response<ProxyBody>, hyper::Error> {
     let host = extract_host(&req);
@@ -203,10 +203,7 @@ pub(super) async fn handle_request(
     let routes = route_cache.read().await.clone();
     let req_path = req.uri().path().to_string();
 
-    // Snapshot the mutable allow-list for the duration of this request
-    // so we don't hold the lock across awaits.
-    let domains_snapshot: Vec<String> = domains.read().map(|g| g.clone()).unwrap_or_default();
-    let route = find_route(&host, &req_path, &routes, &domains_snapshot);
+    let route = find_route(&host, &req_path, &routes, &domains);
     let Some(route) = route else {
         let body_html = pages::render_not_found_body(&host);
         let html = pages::render_page(404, "Not Found", &body_html);
