@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const NSL_BIN = process.env.NSL_BIN ?? "nsl";
-export const NSLD_BIN = process.env.NSLD_BIN ?? "nsld";
 
 // -------------------------------------------------------------------------
 // State directory isolation

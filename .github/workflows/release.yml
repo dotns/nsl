@@ -4,17 +4,11 @@ name: Release
 # Triggered by pushing a tag like `v0.1.0` or manually via workflow_dispatch.
 #
 # Packaging:
-#   Unix:    nsl-<subpkg>.tar.gz    (contains ./nsl, client)
-#            nsld-<subpkg>.tar.gz   (contains ./nsld, server daemon)
+#   Unix:    nsl-<subpkg>.tar.gz    (contains ./nsl)
 #   Windows: nsl-<subpkg>.zip       (contains nsl.exe)
-#            nsld-<subpkg>.zip      (contains nsld.exe)
-#
-# Docker images for nsld are built and pushed to Docker Hub by the
-# separate `docker.yml` workflow (also tag-triggered).
 #
 # Downstream: run the manual `npm` workflow with this tag to publish npm
-# platform subpackages from these release assets (npm only consumes the
-# `nsl-*` archives, ignores `nsld-*`).
+# platform subpackages from these release assets.
 on:
   push:
     tags:
@@ -62,12 +56,10 @@ jobs:
         run: |
           set -eu
           mkdir -p dist
-          for bin in nsl nsld; do
-            cp "target/${{ matrix.target }}/release/${bin}" "${bin}"
-            chmod +x "${bin}"
-            tar -czf "dist/${bin}-${{ matrix.subpkg }}.tar.gz" "${bin}"
-            rm "${bin}"
-          done
+          cp "target/${{ matrix.target }}/release/nsl" nsl
+          chmod +x nsl
+          tar -czf "dist/nsl-${{ matrix.subpkg }}.tar.gz" nsl
+          rm nsl
 
       - uses: actions/upload-artifact@v7
         with:
@@ -106,12 +98,10 @@ jobs:
         run: |
           set -eu
           mkdir -p dist
-          for bin in nsl nsld; do
-            cp "target/${{ matrix.target }}/release/${bin}" "${bin}"
-            chmod +x "${bin}"
-            tar -czf "dist/${bin}-${{ matrix.subpkg }}.tar.gz" "${bin}"
-            rm "${bin}"
-          done
+          cp "target/${{ matrix.target }}/release/nsl" nsl
+          chmod +x nsl
+          tar -czf "dist/nsl-${{ matrix.subpkg }}.tar.gz" nsl
+          rm nsl
 
       - uses: actions/upload-artifact@v7
         with:
@@ -147,11 +137,9 @@ jobs:
         run: |
           set -eu
           mkdir -p dist
-          for bin in nsl nsld; do
-            cp "target/${{ matrix.target }}/release/${bin}.exe" "${bin}.exe"
-            7z a "dist/${bin}-${{ matrix.subpkg }}.zip" "${bin}.exe"
-            rm "${bin}.exe"
-          done
+          cp "target/${{ matrix.target }}/release/nsl.exe" nsl.exe
+          7z a "dist/nsl-${{ matrix.subpkg }}.zip" nsl.exe
+          rm nsl.exe
 
       - uses: actions/upload-artifact@v7
         with:
@@ -200,7 +188,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Both `nsl-*` (client) and `nsld-*` (server) archives ship.
           gh release create "${{ steps.tag.outputs.name }}" \
             --title "${{ steps.tag.outputs.name }}" \
             --generate-notes \

@@ -18,7 +18,6 @@ mod routes;
 mod run;
 mod serve;
 mod status;
-mod tunnel;
 mod utils;
 
 fn main() -> anyhow::Result<()> {

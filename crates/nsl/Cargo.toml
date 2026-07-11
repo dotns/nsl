@@ -15,9 +15,7 @@ name = "nsl"
 path = "src/main.rs"
 
 [dependencies]
-tunnel = { path = "../tunnel", version = "0.1.10" }
 tokio.workspace = true
-tokio-util.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

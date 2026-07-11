@@ -59,7 +59,7 @@ jobs:
       - name: Install e2e dependencies
         run: cd tests && bun install --frozen-lockfile
       - name: Run e2e tests
-        run: cd tests && NSL_BIN=../target/debug/nsl NSLD_BIN=../target/debug/nsld bun test --timeout 30000 src/
+        run: cd tests && NSL_BIN=../target/debug/nsl bun test --timeout 30000 src/
 
   build:
     name: release build
