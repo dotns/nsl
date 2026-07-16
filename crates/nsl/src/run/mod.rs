@@ -297,6 +297,13 @@ fn spawn_wrapped(
             .env("HOST", "127.0.0.1")
             .env("NSL_URL", url)
             .env("NSL", "1");
+        if own_group {
+            // The child runs in a background process group, so any read of
+            // the inherited TTY stops it with SIGTTIN (wrangler dev's
+            // interactive UI enables raw mode at startup and hangs there).
+            // Detach stdin so TTY-aware CLIs disable interactive input.
+            command.stdin(std::process::Stdio::null());
+        }
     });
 
     if own_group {
