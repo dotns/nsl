@@ -169,6 +169,7 @@ For recognized CLIs, `nsl` may append framework-specific arguments:
 - Commands containing `vite` or `react-router`: `--port <port> --strictPort --host 127.0.0.1`
 - Commands containing `astro`, ` ng `, or `react-native`: `--port <port> --host 127.0.0.1`
 - Commands containing `expo`: `--port <port> --host localhost`
+- Commands containing `wrangler` and `dev`: `--port <port> --ip 127.0.0.1`
 
 If the command already contains `--port` or `--host`, `nsl` does not override
 that option.

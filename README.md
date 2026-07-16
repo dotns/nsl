@@ -129,6 +129,7 @@ For CLIs that expect explicit port flags, `nsl` can add framework-specific argum
 | `vite`, `react-router` | `--port <port> --strictPort --host 127.0.0.1` |
 | `astro`, ` ng `, `react-native` | `--port <port> --host 127.0.0.1` |
 | `expo` | `--port <port> --host localhost` |
+| `wrangler` + `dev` | `--port <port> --ip 127.0.0.1` |
 
 If the command already contains `--port` or `--host`, `nsl` leaves that option alone.
 
