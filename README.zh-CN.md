@@ -128,6 +128,7 @@ nsl run npm run dev
 | `vite`、`react-router` | `--port <port> --strictPort --host 127.0.0.1` |
 | `astro`、` ng `、`react-native` | `--port <port> --host 127.0.0.1` |
 | `expo` | `--port <port> --host localhost` |
+| `wrangler` + `dev` | `--port <port> --ip 127.0.0.1` |
 
 如果命令里已经有 `--port` 或 `--host`,`nsl` 不会覆盖该参数。
 

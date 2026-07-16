@@ -42,17 +42,17 @@ fn rand_u16() -> u16 {
 pub fn inject_framework_flags(args: &[String], port: u16) -> Vec<String> {
     let mut result = args.to_vec();
 
-    let has_port = args.iter().any(|a| a.starts_with("--port"));
-    let has_host = args.iter().any(|a| a.starts_with("--host"));
-
-    if has_port && has_host {
-        return result;
-    }
-
     let cmd_str = args.join(" ");
     let framework = detect_framework(&cmd_str).or_else(|| detect_framework_via_package_json(args));
 
     if let Some(fw) = framework {
+        let has_port = args.iter().any(|a| a.starts_with("--port"));
+        let has_host = args.iter().any(|a| a.starts_with(fw.host_flag));
+
+        if has_port && has_host {
+            return result;
+        }
+
         // npm / pnpm / yarn-run require `--` before forwarding args to
         // the underlying script. bun / yarn-without-run forward
         // trailing args unchanged.
@@ -68,7 +68,7 @@ pub fn inject_framework_flags(args: &[String], port: u16) -> Vec<String> {
             }
         }
         if !has_host {
-            result.push("--host".to_string());
+            result.push(fw.host_flag.to_string());
             result.push(fw.host.to_string());
         }
     }
@@ -137,6 +137,7 @@ pub fn replace_port_placeholders(args: &[String], port: u16) -> Vec<String> {
 
 struct FrameworkHint {
     strict_port: bool,
+    host_flag: &'static str,
     host: &'static str,
 }
 
@@ -144,17 +145,28 @@ fn detect_framework(cmd: &str) -> Option<FrameworkHint> {
     if cmd.contains("vite") || cmd.contains("react-router") {
         Some(FrameworkHint {
             strict_port: true,
+            host_flag: "--host",
             host: "127.0.0.1",
         })
     } else if cmd.contains("astro") || cmd.contains(" ng ") || cmd.contains("react-native") {
         Some(FrameworkHint {
             strict_port: false,
+            host_flag: "--host",
             host: "127.0.0.1",
         })
     } else if cmd.contains("expo") {
         Some(FrameworkHint {
             strict_port: false,
+            host_flag: "--host",
             host: "localhost",
+        })
+    } else if cmd.contains("wrangler") && cmd.contains("dev") {
+        // `wrangler dev` ignores the PORT env var, and its bind-address
+        // flag is `--ip`; `--host` means the zone host to route to.
+        Some(FrameworkHint {
+            strict_port: false,
+            host_flag: "--ip",
+            host: "127.0.0.1",
         })
     } else {
         None
@@ -452,6 +464,50 @@ mod tests {
         fn drop(&mut self) {
             let _ = std::env::set_current_dir(&self.prev);
         }
+    }
+
+    /// `wrangler dev` ignores PORT, so nsl must inject `--port` and the
+    /// wrangler-specific `--ip` bind flag (never `--host`, which means
+    /// the zone host in wrangler).
+    #[test]
+    fn test_inject_framework_flags_wrangler_dev() {
+        let args = vec!["wrangler".to_string(), "dev".to_string()];
+        let result = inject_framework_flags(&args, 4000);
+        assert!(result.contains(&"--port".to_string()));
+        assert!(result.contains(&"4000".to_string()));
+        assert!(result.contains(&"--ip".to_string()));
+        assert!(result.contains(&"127.0.0.1".to_string()));
+        assert!(!result.contains(&"--host".to_string()));
+        assert!(!result.contains(&"--strictPort".to_string()));
+    }
+
+    /// `wrangler deploy` is not a dev server; nothing is injected.
+    #[test]
+    fn test_no_inject_wrangler_deploy() {
+        let args = vec!["wrangler".to_string(), "deploy".to_string()];
+        let result = inject_framework_flags(&args, 4000);
+        assert_eq!(result, args);
+    }
+
+    /// Hono's Cloudflare template: `npm run dev` with
+    /// `scripts.dev = "wrangler dev"` injects via the `--` separator.
+    #[test]
+    fn test_inject_via_package_json_npm_run_wrangler() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("package.json"),
+            r#"{"scripts":{"dev":"wrangler dev"}}"#,
+        )
+        .unwrap();
+
+        let _guard = with_cwd(dir.path());
+        let args = vec!["npm".into(), "run".into(), "dev".into()];
+        let result = inject_framework_flags(&args, 4000);
+
+        let dash_pos = result.iter().position(|a| a == "--").unwrap();
+        let port_pos = result.iter().position(|a| a == "--port").unwrap();
+        assert!(dash_pos < port_pos);
+        assert!(result.contains(&"--ip".to_string()));
     }
 
     #[test]
