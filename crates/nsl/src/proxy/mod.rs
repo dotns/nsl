@@ -12,7 +12,9 @@ use tokio::sync::RwLock;
 
 use crate::routes::RouteMapping;
 
-pub use daemon::{daemonize_and_start_proxy, ensure_proxy_running, show_logs, stop_proxy};
+pub use daemon::{
+    daemonize_and_start_proxy, ensure_proxy_running, is_proxy_running, show_logs, stop_proxy,
+};
 pub use server::start_proxy;
 
 /// Response header used to identify an NSL proxy.

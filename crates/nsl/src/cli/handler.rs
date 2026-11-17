@@ -200,10 +200,18 @@ pub(super) async fn handle(cli: Cli) -> anyhow::Result<()> {
             }
             Ok(())
         }
+        Commands::Prune { force } => crate::prune::run(&config, force),
+        Commands::Doctor { json } => crate::doctor::run(&config, json).await,
         Commands::Status => {
             crate::status::print_status();
             println!();
             config::print_config();
+            let state_dir = crate::status::get_proxy_status().state_dir;
+            let issues = crate::status::status_issue_count(&state_dir, config.proxy_port);
+            if issues > 0 {
+                println!();
+                println!("! {issues} issue(s) detected. Run `nsl doctor` for details.");
+            }
             Ok(())
         }
         Commands::Trust => {

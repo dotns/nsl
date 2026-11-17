@@ -139,6 +139,11 @@ pub fn kill_app_process(owner: &RouteOwner) -> anyhow::Result<()> {
     terminate_process_tree(owner.pid)
 }
 
+/// `TerminateProcess` is already forceful, so this matches [`kill_app_process`].
+pub fn force_kill_app_process(owner: &RouteOwner) -> anyhow::Result<()> {
+    kill_app_process(owner)
+}
+
 pub fn terminate_process_tree(root_pid: u32) -> anyhow::Result<()> {
     let processes = snapshot_processes().unwrap_or_default();
     let mut descendants = Vec::new();

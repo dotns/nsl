@@ -38,11 +38,41 @@ pub fn is_ca_trusted(state_dir: &Path) -> bool {
     }
 }
 
+/// Whether the CA is trusted, or `None` when it cannot be checked (Windows).
+pub fn ca_trust_status(state_dir: &Path) -> Option<bool> {
+    if cfg!(windows) {
+        None
+    } else {
+        Some(is_ca_trusted(state_dir))
+    }
+}
+
+/// Command that imports the CA into the current user's Windows trust store.
+pub fn windows_trust_command(ca_cert_path: &Path) -> String {
+    format!(
+        "certutil -user -addstore Root \"{}\"",
+        ca_cert_path.display()
+    )
+}
+
+fn windows_manual_trust_hint(ca_cert_path: &Path) -> String {
+    format!(
+        "automatic CA install is not supported on Windows; import it manually (no admin needed): {}",
+        windows_trust_command(ca_cert_path)
+    )
+}
+
 /// Install the local CA into the system trust store.
 pub fn trust_ca(state_dir: &Path) -> anyhow::Result<TrustResult> {
     let ca_cert_path = state_dir.join(CA_CERT_FILE);
     if !ca_cert_path.exists() {
         anyhow::bail!("CA certificate not found at {}", ca_cert_path.display());
+    }
+
+    if cfg!(windows) {
+        return Ok(TrustResult::Failed(windows_manual_trust_hint(
+            &ca_cert_path,
+        )));
     }
 
     if is_ca_trusted(state_dir) {
@@ -307,6 +337,14 @@ fn parse_os_release_id_from_content(content: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_windows_manual_trust_hint() {
+        let path = Path::new(r"C:\Users\bob\.nsl\ca.pem");
+        let hint = windows_manual_trust_hint(path);
+        assert!(hint.contains("not supported on Windows"));
+        assert!(hint.contains(r#"certutil -user -addstore Root "C:\Users\bob\.nsl\ca.pem""#));
+    }
 
     #[test]
     fn test_parse_os_release_debian() {

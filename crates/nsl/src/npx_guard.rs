@@ -38,7 +38,7 @@ pub fn check_npx_execution() {
     if is_npx_or_dlx() {
         eprintln!("Error: nsl should not be run via npx or pnpm dlx.");
         eprintln!("Install globally instead:");
-        eprintln!("  npm install -g nsl");
+        eprintln!("  npm install -g @dotns/nsl");
         std::process::exit(1);
     }
 }

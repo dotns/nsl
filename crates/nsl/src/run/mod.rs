@@ -83,6 +83,8 @@ fn build_route_owner(pid: u32, args: &[String]) -> anyhow::Result<RouteOwner> {
         command: shell_process_command(args),
         process_group: crate::platform::current_process_group(pid),
         start_time,
+        supervisor_pid: Some(std::process::id()),
+        supervisor_start_time: crate::platform::current_process_start_time(std::process::id()),
     })
 }
 
@@ -373,6 +375,7 @@ async fn spawn_command(
     // Set up signal forwarding and wait for child
     let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
     let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+    let mut sighup = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())?;
 
     let wait_fut = child.wait();
 
@@ -387,6 +390,11 @@ async fn spawn_command(
             Ok(exit_code_from_status(status).unwrap_or(0))
         }
         _ = sigterm.recv() => {
+            terminate_child(own_group, child_pid);
+            let status = child.wait().await?;
+            Ok(exit_code_from_status(status).unwrap_or(0))
+        }
+        _ = sighup.recv() => {
             terminate_child(own_group, child_pid);
             let status = child.wait().await?;
             Ok(exit_code_from_status(status).unwrap_or(0))

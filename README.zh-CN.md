@@ -42,6 +42,14 @@ curl -fsSL https://raw.githubusercontent.com/dotns/nsl/main/install.sh | sh -s -
 npm i -g @dotns/nsl
 ```
 
+推荐全局安装。如果不想要求每个协作者都全局安装,也可以作为开发依赖装进项目;package.json 的 script 会从 `node_modules/.bin/nsl` 找到它,执行一次普通的 `npm install` 之后 `"dev": "nsl run ..."` 就能用:
+
+```bash
+npm i -D @dotns/nsl      # 或者:pnpm add -D @dotns/nsl / bun add -d @dotns/nsl
+```
+
+不要用 `npx nsl` 或 `pnpm dlx nsl` 运行:临时的包路径会在运行器退出后导致后台代理出问题。
+
 从源码构建:
 
 ```bash
@@ -79,6 +87,37 @@ nsl run npm run dev
 ```
 
 提交一次,所有协作者都用同一个 URL。
+
+## Monorepo
+
+`nsl` 本身不负责编排多个进程。让包管理器或任务运行器去启动各个应用,每个应用的 `dev` script 各自写一个 `nsl run --name`。
+
+**同一个域名,前端在 `/`,API 在 `/api`** —— 前端用 `fetch("/api/users")` 这样的相对路径请求 API,不需要配置 CORS,cookie 也是同源的:
+
+```text
+shop/
+├── package.json          "dev": "pnpm -r --parallel dev"
+├── apps/web/package.json "dev": "nsl run --name shop vite"
+└── apps/api/package.json "dev": "nsl run --name shop:/api --strip node server.js"
+```
+
+```bash
+pnpm dev
+# web -> http://shop.localhost:3355
+# api -> http://shop.localhost:3355/api
+```
+
+加了 `--strip` 后,浏览器请求 `/api/users` 时 API 收到的是 `/users`。如果 API 自己的路由本来就以 `/api` 开头,就不要加。Bun workspaces 用 `bun run --filter '*' dev`,写法相同。
+
+**多个独立应用,各自一个域名** —— 用 Turborepo(或 `pnpm -r`)时,每个包里写 `nsl run`,名字从各自的 `package.json` 推断:
+
+```text
+apps/admin/package.json   "dev": "nsl run next dev"    -> http://admin.localhost:3355
+apps/docs/package.json    "dev": "nsl run astro dev"   -> http://docs.localhost:3355
+package.json              "dev": "turbo dev"
+```
+
+没有服务的包(`tsc --watch`、库的构建)保持原来的 `dev` script 就行。如果不想要求每个协作者都全局安装,可以在 workspace 根目录把 `nsl` 装成开发依赖(见[安装](#安装))。
 
 ## 应用启动全流程
 
@@ -202,7 +241,15 @@ sudo nsl trust          # 安装本地 CA(每台机器一次)
 nsl start --https
 ```
 
-CA 在第一次启动时生成,自动信任 macOS(Keychain)、Linux(`update-ca-certificates` / NSS)、Windows(`certutil`)的系统信任库。Firefox 用自己的信任库,需要手动导入。每个 hostname 的叶子证书在第一次 SNI 握手时按需生成,缓存在 `certs/` 里。
+CA 在第一次启动时生成。`nsl trust` 会把它加入 macOS(Keychain)和 Linux(`update-ca-certificates` / `update-ca-trust` / `trust`)的系统信任库。Firefox 用自己的信任库,需要手动导入。每个 hostname 的叶子证书在第一次 SNI 握手时按需生成,缓存在 state 目录下的 `host-certs/` 里。
+
+**Windows:** 暂不支持自动安装。运行 `nsl trust`,它会打印一条带有本机 CA 路径的 `certutil` 命令,复制执行即可。这条命令导入的是当前用户的信任库,不需要管理员权限:
+
+```text
+certutil -user -addstore Root "<state 目录>\ca.pem"
+```
+
+state 目录默认是 `%USERPROFILE%\.nsl`。导入后浏览器即可信任证书。Windows 自带的 `curl.exe` 还会检查证书吊销,本地 CA 无法提供吊销信息,用它测试时需要加 `--ssl-no-revoke`。
 
 ## 命令一览
 
@@ -215,6 +262,8 @@ nsl reload                     先停后启,重新读配置。
 nsl logs [-n N] [--follow]     打印守护日志。
 nsl status                     守护状态 + 路由 + 生效配置。
 nsl list                       仅活跃路由。
+nsl doctor [--json]            诊断代理、路由、HTTPS 和 DNS 问题。
+nsl prune [--force]            停掉 `nsl run` 被杀后残留的应用。
 nsl route [NAME[:/PATH]] [PORT]   注册/移除静态路由。
 nsl get <NAME[:/PATH]>         打印名字对应的 URL(CI / 脚本用)。
 nsl trust                      安装本地 CA 到系统信任库。
@@ -287,6 +336,30 @@ nsl logs --follow
 
 `nsl run` 的应用输出只转发到当前终端,`nsl` 不持久化应用日志。
 
+### 诊断
+
+URL 打不开时先运行 `nsl doctor`。它只做检查、不改动任何东西,并为每个问题给出修复建议:
+
+- 代理没有运行,或者端口被其他程序占用;
+- PID 文件过期,或者正在运行的代理端口和配置不一致(`nsl reload`);
+- 开启了 HTTPS 但本地 CA 没有被信任;
+- 路由指向的端口没有程序在监听;
+- 某个 host 只有路径路由(`shop:/api`),没有 `/` 路由;
+- 自定义域名没有解析到本机地址(`sudo nsl hosts sync`)。配置了 `[proxy.display]` 的域名会跳过。
+
+`nsl doctor --json` 以 JSON 输出报告。有检查失败时退出码为 `1`。`nsl status` 发现 PID 文件过期或端口不一致时,会提示运行 `nsl doctor`。
+
+### 残留的应用
+
+`nsl run` 收到 Ctrl-C、`SIGTERM` 或 `SIGHUP`(关闭终端)时会停掉应用。如果 `nsl run` 自己被 `SIGKILL` 杀掉,应用可能继续运行并保留路由。`nsl prune` 会找到这类应用,确认它们确实是 `nsl run` 启动的进程后发送 `SIGTERM` 停掉,并删除路由。
+
+```bash
+nsl prune           # SIGTERM,最多等待 3 秒
+nsl prune --force   # 对忽略 SIGTERM 的应用再发 SIGKILL
+```
+
+`nsl run` 在任务运行器下(没有 TTY)运行时,应用和运行器共用进程组,`nsl prune` 只会给应用的顶层进程发信号。旧版本 `nsl` 注册的路由不在清理范围内。
+
 ### 给非 `nsl` 启动的进程注册路由
 
 `nsl route` 给不是通过 `nsl` 启动的东西注册路由 —— Docker 容器、编译好的二进制、跑在别的机器上的服务。
@@ -307,7 +380,7 @@ nsl route api --remove
 | `-s, --strip`         | 转发前剥掉匹配到的路径前缀。              |
 | `-c, --change-origin` | 把外发请求的 `Host` 头改写为目标地址。    |
 
-> **保留字:** `run`、`serve`、`start`、`stop`、`reload`、`logs`、`route`、`get`、`list`、`status`、`trust`、`hosts`。项目名不巧撞到保留字,用 `nsl run --name <name> <cmd>`。
+> **保留字:** `run`、`serve`、`start`、`stop`、`reload`、`logs`、`route`、`get`、`list`、`status`、`doctor`、`prune`、`trust`、`hosts`。项目名不巧撞到保留字,用 `nsl run --name <name> <cmd>`。
 
 ## 配置
 
@@ -460,14 +533,29 @@ sudo rm -rf /tmp/nsl      # 仅在用过特权端口时
 npm uninstall -g @dotns/nsl
 ```
 
-如果之后还要用 HTTPS,重新 `sudo nsl trust` —— 旧 CA 跟状态目录一起没了。
+如果执行过 `sudo nsl trust`(或在 Windows 上手动导入过 CA),还要把 CA 从系统信任库里删掉。只删 `~/.nsl` 不会取消信任:
+
+```bash
+# macOS
+security delete-certificate -c "nsl Local CA"
+# Debian / Ubuntu
+sudo rm /usr/local/share/ca-certificates/nsl-ca.crt && sudo update-ca-certificates --fresh
+# Fedora / RHEL
+sudo rm /etc/pki/ca-trust/source/anchors/nsl-ca.pem && sudo update-ca-trust
+# Arch
+sudo rm /etc/ca-certificates/trust-source/anchors/nsl-ca.pem && sudo trust extract-compat
+# Windows(如果用 certutil 导入过)
+certutil -user -delstore Root "nsl Local CA"
+```
+
+如果在 Firefox 里手动导入过 CA,到 设置 → 证书 里删掉 "nsl Local CA"。之后还要用 HTTPS 的话,重新执行 `sudo nsl trust`,会生成新的 CA。
 
 ## 常见问题
 
 - **`nsl route` 报 "proxy is not running"** —— `nsl run` 会自动启动,但 `nsl route` 不会。先跑一次 `nsl start`。
 - **端口被占用** —— 别的进程占了 `3355`。改用 `nsl start --listen 127.0.0.1:8080` 或在配置里设 `[proxy].listen = "127.0.0.1:8080"`。
 - **Linux 上 `.localhost` 解析失败** —— glibc 默认支持 `*.localhost`,某些极简发行版裁掉了。要么在 `/etc/nsswitch.conf` 里补上,要么改用自定义域名后缀 + `sudo nsl hosts sync`。
-- **浏览器说 HTTPS 证书不受信任** —— 跑 `sudo nsl trust`。Linux 上的 Firefox 用自己的 NSS 信任库,手动导入 CA。
+- **浏览器说 HTTPS 证书不受信任** —— 跑 `sudo nsl trust`。Windows 上执行 `nsl trust` 打印出来的 `certutil` 命令。Linux 上的 Firefox 用自己的 NSS 信任库,手动导入 CA。
 - **WebSocket / HTTP/2** —— 透明升级,不需要额外参数。
 
 ## 致敬

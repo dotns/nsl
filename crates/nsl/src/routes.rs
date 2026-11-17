@@ -51,6 +51,49 @@ pub struct RouteOwner {
     pub process_group: Option<u32>,
     #[serde(default)]
     pub start_time: Option<u64>,
+    /// PID of the `nsl run` process supervising the owner.
+    #[serde(default)]
+    pub supervisor_pid: Option<u32>,
+    #[serde(default)]
+    pub supervisor_start_time: Option<u64>,
+}
+
+/// Whether a route's owner is still the recorded process.
+///
+/// Static routes are always live. A dynamic route is dead when its PID is gone,
+/// or when the recorded start time differs from the current one (PID reuse).
+/// An unreadable start time cannot be verified and keeps the route.
+pub fn is_route_live(route: &RouteMapping) -> bool {
+    if route.pid == 0 {
+        return true;
+    }
+    if !is_process_alive(route.pid) {
+        return false;
+    }
+    match route.owner.as_ref().and_then(|o| o.start_time) {
+        Some(expected) => {
+            crate::platform::current_process_start_time(route.pid).is_none_or(|t| t == expected)
+        }
+        None => true,
+    }
+}
+
+/// Whether the owner's recorded `nsl run` supervisor is gone.
+///
+/// Owners without supervisor info are never orphans.
+pub fn is_orphan(owner: &RouteOwner) -> bool {
+    let Some(pid) = owner.supervisor_pid else {
+        return false;
+    };
+    if !is_process_alive(pid) {
+        return true;
+    }
+    match owner.supervisor_start_time {
+        Some(expected) => {
+            crate::platform::current_process_start_time(pid).is_some_and(|t| t != expected)
+        }
+        None => false,
+    }
 }
 
 fn default_path_prefix() -> String {
@@ -110,10 +153,7 @@ impl RouteStore {
         let raw = fs::read_to_string(&self.routes_path)?;
         let routes: Vec<RouteMapping> = serde_json::from_str(&raw)?;
 
-        let alive: Vec<RouteMapping> = routes
-            .into_iter()
-            .filter(|r| r.pid == 0 || is_process_alive(r.pid))
-            .collect();
+        let alive: Vec<RouteMapping> = routes.into_iter().filter(is_route_live).collect();
 
         Ok(alive)
     }
@@ -259,6 +299,16 @@ impl RouteStore {
         Ok(())
     }
 
+    /// Rewrite `routes.json` without routes whose owner is gone.
+    pub fn compact(&self) -> Result<(), NSLError> {
+        if !self.routes_path.exists() {
+            return Ok(());
+        }
+        let _lock = self.acquire_lock()?;
+        let routes = self.load_routes()?;
+        self.save_routes(&routes)
+    }
+
     fn save_routes(&self, routes: &[RouteMapping]) -> Result<(), NSLError> {
         let json = serde_json::to_string_pretty(routes)?;
         fs::write(&self.routes_path, json)?;
@@ -319,6 +369,8 @@ mod tests {
             command: vec!["sh".to_string(), "-c".to_string(), "sleep 60".to_string()],
             process_group: None,
             start_time: None,
+            supervisor_pid: None,
+            supervisor_start_time: None,
         }
     }
 
@@ -547,5 +599,126 @@ mod tests {
         assert_eq!(routes.len(), 1);
         assert_eq!(routes[0].path_prefix, "/");
         assert!(!routes[0].strip_prefix);
+    }
+
+    fn test_route(pid: u32, owner: Option<RouteOwner>) -> RouteMapping {
+        RouteMapping {
+            hostname: "myapp.localhost".to_string(),
+            port: 4000,
+            pid,
+            change_origin: false,
+            path_prefix: "/".to_string(),
+            strip_prefix: false,
+            owner,
+        }
+    }
+
+    fn dead_pid() -> u32 {
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("--help")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        let pid = child.id();
+        child.wait().unwrap();
+        pid
+    }
+
+    #[test]
+    fn test_is_route_live_static_route() {
+        assert!(is_route_live(&test_route(0, None)));
+    }
+
+    #[test]
+    fn test_is_route_live_dead_pid() {
+        let pid = dead_pid();
+        assert!(!is_route_live(&test_route(pid, Some(test_owner(pid)))));
+    }
+
+    #[test]
+    fn test_is_route_live_owner_without_start_time() {
+        let pid = std::process::id();
+        assert!(is_route_live(&test_route(pid, Some(test_owner(pid)))));
+        assert!(is_route_live(&test_route(pid, None)));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_is_route_live_start_time_match() {
+        let pid = std::process::id();
+        let mut owner = test_owner(pid);
+        owner.start_time = crate::platform::current_process_start_time(pid);
+        assert!(owner.start_time.is_some());
+        assert!(is_route_live(&test_route(pid, Some(owner))));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_is_route_live_reused_pid() {
+        let pid = std::process::id();
+        let mut owner = test_owner(pid);
+        owner.start_time = crate::platform::current_process_start_time(pid).map(|t| t + 1);
+        assert!(!is_route_live(&test_route(pid, Some(owner))));
+    }
+
+    #[test]
+    fn test_is_orphan_without_supervisor_info() {
+        assert!(!is_orphan(&test_owner(std::process::id())));
+    }
+
+    #[test]
+    fn test_is_orphan_dead_supervisor() {
+        let mut owner = test_owner(std::process::id());
+        owner.supervisor_pid = Some(dead_pid());
+        assert!(is_orphan(&owner));
+    }
+
+    #[test]
+    fn test_is_orphan_live_supervisor() {
+        let pid = std::process::id();
+        let mut owner = test_owner(pid);
+        owner.supervisor_pid = Some(pid);
+        owner.supervisor_start_time = crate::platform::current_process_start_time(pid);
+        assert!(!is_orphan(&owner));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_is_orphan_reused_supervisor_pid() {
+        let pid = std::process::id();
+        let mut owner = test_owner(pid);
+        owner.supervisor_pid = Some(pid);
+        owner.supervisor_start_time =
+            crate::platform::current_process_start_time(pid).map(|t| t + 1);
+        assert!(is_orphan(&owner));
+    }
+
+    #[test]
+    fn test_owner_deserializes_without_supervisor_fields() {
+        let json = r#"{"pid":1,"platform":"linux","cwd":"/","command":["sh"]}"#;
+        let owner: RouteOwner = serde_json::from_str(json).unwrap();
+        assert_eq!(owner.supervisor_pid, None);
+        assert_eq!(owner.supervisor_start_time, None);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_load_routes_drops_reused_pid() {
+        let tmp = TempDir::new().unwrap();
+        let store = RouteStore::new(tmp.path().to_path_buf());
+        store.ensure_dir().unwrap();
+
+        let pid = std::process::id();
+        let mut owner = test_owner(pid);
+        owner.start_time = crate::platform::current_process_start_time(pid).map(|t| t + 1);
+        let mut kept = test_route(0, None);
+        kept.hostname = "static.localhost".to_string();
+        let routes = vec![test_route(pid, Some(owner)), kept];
+        std::fs::write(store.routes_path(), serde_json::to_string(&routes).unwrap()).unwrap();
+
+        let loaded = store.load_routes().unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].hostname, "static.localhost");
     }
 }

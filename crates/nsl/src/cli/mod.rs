@@ -176,6 +176,20 @@ pub(super) enum Commands {
     /// Show proxy status, active routes, and merged configuration
     Status,
 
+    /// Diagnose common problems with the proxy, routes, HTTPS, and DNS
+    Doctor {
+        /// Print the report as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Stop apps whose `nsl run` was killed and remove their routes
+    Prune {
+        /// Send SIGKILL to apps that ignore SIGTERM
+        #[arg(long)]
+        force: bool,
+    },
+
     /// Add local CA to system trust store
     Trust,
 
@@ -227,8 +241,8 @@ impl Cli {
 /// this list (and is not a help/version flag), `parse_args` injects an
 /// implicit `run` so `nsl bun run dev` works the same as `nsl run bun run dev`.
 const SUBCOMMANDS: &[&str] = &[
-    "run", "serve", "start", "stop", "reload", "logs", "route", "get", "list", "status", "trust",
-    "hosts", "help",
+    "run", "serve", "start", "stop", "reload", "logs", "route", "get", "list", "status", "doctor",
+    "prune", "trust", "hosts", "help",
 ];
 
 /// Parse argv, injecting an implicit `run` subcommand when the first
@@ -336,6 +350,18 @@ mod tests {
     fn test_parse_args_does_not_inject_for_known_subcommand() {
         let cli = parse_args(["nsl", "list"]);
         assert!(matches!(cli.command, Commands::List));
+    }
+
+    #[test]
+    fn test_parse_args_doctor_is_subcommand() {
+        let cli = parse_args(["nsl", "doctor", "--json"]);
+        assert!(matches!(cli.command, Commands::Doctor { json: true }));
+    }
+
+    #[test]
+    fn test_parse_args_prune_is_subcommand() {
+        let cli = parse_args(["nsl", "prune", "--force"]);
+        assert!(matches!(cli.command, Commands::Prune { force: true }));
     }
 
     #[test]

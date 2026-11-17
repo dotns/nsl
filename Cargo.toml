@@ -24,7 +24,7 @@ clap = { version = "4", features = ["derive"] }
 rustls = { version = "0.23", default-features = false, features = ["std", "ring", "tls12", "logging"] }
 rustls-pemfile = "2"
 tempfile = "3"
-rcgen = { version = "0.14.7", features = ["pem", "x509-parser"] }
+rcgen = { version = "0.14.10", features = ["pem", "x509-parser"] }
 
 [profile.release]
 lto = true

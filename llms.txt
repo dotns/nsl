@@ -25,6 +25,28 @@ nsl --help
 Avoid `npx nsl` or `pnpm dlx nsl` for daemon workflows. Temporary package
 paths can break the background proxy process after the package runner exits.
 
+Global install is recommended. Installing as a project dev dependency also
+works; package scripts resolve `node_modules/.bin/nsl`:
+
+```bash
+npm install -D @dotns/nsl
+```
+
+## Monorepos
+
+`nsl` does not orchestrate processes. Let the package manager or task runner
+start each app, and give each app's `dev` script its own `nsl run --name`:
+
+```text
+apps/web/package.json  "dev": "nsl run --name shop vite"
+apps/api/package.json  "dev": "nsl run --name shop:/api --strip node server.js"
+package.json           "dev": "pnpm -r --parallel dev"
+```
+
+The web app reaches the API same-origin at `/api`; no CORS setup is needed.
+For independent apps, each package runs `nsl run` and gets a name inferred
+from its `package.json` (works with `turbo dev`).
+
 ## Common commands
 
 Start an app behind the proxy:
@@ -88,6 +110,22 @@ Show proxy and route state:
 ```bash
 nsl status
 nsl list
+```
+
+Diagnose why a URL does not load (read-only; exit code 1 on failures,
+`--json` for machine-readable output):
+
+```bash
+nsl doctor
+nsl doctor --json
+```
+
+Stop apps left running after `nsl run` was killed with SIGKILL, and remove
+their routes (`--force` also sends SIGKILL to apps that ignore SIGTERM):
+
+```bash
+nsl prune
+nsl prune --force
 ```
 
 Read proxy daemon logs:
@@ -253,6 +291,10 @@ Install the local CA once before using HTTPS:
 sudo nsl trust
 nsl start --https
 ```
+
+On Windows, automatic CA install is not supported: run `nsl trust` and execute
+the `certutil -user -addstore Root "<state dir>\ca.pem"` command it prints
+(no admin needed). Windows `curl.exe` needs `--ssl-no-revoke` with the local CA.
 
 For suffixes that do not resolve like `.localhost`, sync hosts entries:
 

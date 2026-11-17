@@ -143,6 +143,8 @@ fn build_owner(pid: u32, root: &Path) -> RouteOwner {
         ],
         process_group: crate::platform::current_process_group(pid),
         start_time: crate::platform::current_process_start_time(pid),
+        supervisor_pid: None,
+        supervisor_start_time: None,
     }
 }
 

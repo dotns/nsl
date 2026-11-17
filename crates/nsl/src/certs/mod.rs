@@ -4,7 +4,7 @@ mod trust;
 
 pub use generate::{generate_ca, generate_host_cert, generate_server_cert};
 pub use sni::SniCertResolver;
-pub use trust::{TrustResult, trust_ca};
+pub use trust::{TrustResult, ca_trust_status, trust_ca, windows_trust_command};
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -153,14 +153,22 @@ pub(super) fn load_certified_key(
     Ok(CertifiedKey::new(certs, signing_key))
 }
 
-/// Assert that a constructed path stays within the expected parent directory.
+/// Path of the local CA certificate in the state directory.
+pub fn ca_cert_path(state_dir: &Path) -> PathBuf {
+    state_dir.join(CA_CERT_FILE)
+}
+
+/// Assert that a constructed path is a file directly inside `parent`.
 pub(super) fn assert_path_containment(child: &Path, parent: &Path) -> anyhow::Result<()> {
-    let canonical_parent = parent
-        .canonicalize()
-        .unwrap_or_else(|_| parent.to_path_buf());
-    let canonical_child = child.canonicalize().unwrap_or_else(|_| child.to_path_buf());
+    // The child file may not exist yet, so compare its (existing) directory.
+    let canonical_parent = parent.canonicalize()?;
+    let contained = child.file_name().is_some()
+        && child
+            .parent()
+            .and_then(|dir| dir.canonicalize().ok())
+            .is_some_and(|dir| dir == canonical_parent);
     anyhow::ensure!(
-        canonical_child.starts_with(&canonical_parent),
+        contained,
         "path traversal detected: {} is outside {}",
         child.display(),
         parent.display()
@@ -259,6 +267,16 @@ fn install_ring_provider_once() {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[test]
+    fn test_assert_path_containment() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path().join("host-certs");
+        std::fs::create_dir(&dir).unwrap();
+        assert!(assert_path_containment(&dir.join("a.pem"), &dir).is_ok());
+        assert!(assert_path_containment(&dir.join("..").join("a.pem"), &dir).is_err());
+        assert!(assert_path_containment(&tmp.path().join("a.pem"), &dir).is_err());
+    }
 
     #[test]
     fn test_is_local_domain() {
