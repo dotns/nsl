@@ -14,6 +14,7 @@ mod npx_guard;
 mod pages;
 mod platform;
 mod proxy;
+mod prune;
 mod routes;
 mod run;
 mod serve;

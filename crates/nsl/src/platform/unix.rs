@@ -115,6 +115,19 @@ pub fn kill_app_process(owner: &RouteOwner) -> anyhow::Result<()> {
     }
 }
 
+/// Like [`kill_app_process`], but sends SIGKILL.
+pub fn force_kill_app_process(owner: &RouteOwner) -> anyhow::Result<()> {
+    validate_app_owner(owner)?;
+    let nix_pid = nix::unistd::Pid::from_raw(owner.pid as i32);
+    let signal = nix::sys::signal::Signal::SIGKILL;
+    if owner.process_group == Some(owner.pid) {
+        nix::sys::signal::killpg(nix_pid, signal)
+    } else {
+        nix::sys::signal::kill(nix_pid, signal)
+    }
+    .map_err(|e| anyhow::anyhow!("failed to kill app process {}: {}", owner.pid, e))
+}
+
 /// Send SIGTERM to a process. Returns `Ok(())` on success.
 pub fn terminate_process(pid: u32) -> anyhow::Result<()> {
     let nix_pid = nix::unistd::Pid::from_raw(pid as i32);
@@ -230,6 +243,8 @@ mod tests {
             command: vec!["sleep".to_string(), "30".to_string()],
             process_group: current_process_group(pid),
             start_time: current_process_start_time(pid),
+            supervisor_pid: None,
+            supervisor_start_time: None,
         };
 
         // The child inherits the test process's group, so it is not its own

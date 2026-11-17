@@ -51,6 +51,11 @@ pub struct RouteOwner {
     pub process_group: Option<u32>,
     #[serde(default)]
     pub start_time: Option<u64>,
+    /// PID of the `nsl run` process supervising the owner.
+    #[serde(default)]
+    pub supervisor_pid: Option<u32>,
+    #[serde(default)]
+    pub supervisor_start_time: Option<u64>,
 }
 
 /// Whether a route's owner is still the recorded process.
@@ -70,6 +75,24 @@ pub fn is_route_live(route: &RouteMapping) -> bool {
             crate::platform::current_process_start_time(route.pid).is_none_or(|t| t == expected)
         }
         None => true,
+    }
+}
+
+/// Whether the owner's recorded `nsl run` supervisor is gone.
+///
+/// Owners without supervisor info are never orphans.
+pub fn is_orphan(owner: &RouteOwner) -> bool {
+    let Some(pid) = owner.supervisor_pid else {
+        return false;
+    };
+    if !is_process_alive(pid) {
+        return true;
+    }
+    match owner.supervisor_start_time {
+        Some(expected) => {
+            crate::platform::current_process_start_time(pid).is_some_and(|t| t != expected)
+        }
+        None => false,
     }
 }
 
@@ -276,6 +299,16 @@ impl RouteStore {
         Ok(())
     }
 
+    /// Rewrite `routes.json` without routes whose owner is gone.
+    pub fn compact(&self) -> Result<(), NSLError> {
+        if !self.routes_path.exists() {
+            return Ok(());
+        }
+        let _lock = self.acquire_lock()?;
+        let routes = self.load_routes()?;
+        self.save_routes(&routes)
+    }
+
     fn save_routes(&self, routes: &[RouteMapping]) -> Result<(), NSLError> {
         let json = serde_json::to_string_pretty(routes)?;
         fs::write(&self.routes_path, json)?;
@@ -336,6 +369,8 @@ mod tests {
             command: vec!["sh".to_string(), "-c".to_string(), "sleep 60".to_string()],
             process_group: None,
             start_time: None,
+            supervisor_pid: None,
+            supervisor_start_time: None,
         }
     }
 
@@ -625,6 +660,46 @@ mod tests {
         let mut owner = test_owner(pid);
         owner.start_time = crate::platform::current_process_start_time(pid).map(|t| t + 1);
         assert!(!is_route_live(&test_route(pid, Some(owner))));
+    }
+
+    #[test]
+    fn test_is_orphan_without_supervisor_info() {
+        assert!(!is_orphan(&test_owner(std::process::id())));
+    }
+
+    #[test]
+    fn test_is_orphan_dead_supervisor() {
+        let mut owner = test_owner(std::process::id());
+        owner.supervisor_pid = Some(dead_pid());
+        assert!(is_orphan(&owner));
+    }
+
+    #[test]
+    fn test_is_orphan_live_supervisor() {
+        let pid = std::process::id();
+        let mut owner = test_owner(pid);
+        owner.supervisor_pid = Some(pid);
+        owner.supervisor_start_time = crate::platform::current_process_start_time(pid);
+        assert!(!is_orphan(&owner));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_is_orphan_reused_supervisor_pid() {
+        let pid = std::process::id();
+        let mut owner = test_owner(pid);
+        owner.supervisor_pid = Some(pid);
+        owner.supervisor_start_time =
+            crate::platform::current_process_start_time(pid).map(|t| t + 1);
+        assert!(is_orphan(&owner));
+    }
+
+    #[test]
+    fn test_owner_deserializes_without_supervisor_fields() {
+        let json = r#"{"pid":1,"platform":"linux","cwd":"/","command":["sh"]}"#;
+        let owner: RouteOwner = serde_json::from_str(json).unwrap();
+        assert_eq!(owner.supervisor_pid, None);
+        assert_eq!(owner.supervisor_start_time, None);
     }
 
     #[cfg(target_os = "linux")]

@@ -200,6 +200,7 @@ pub(super) async fn handle(cli: Cli) -> anyhow::Result<()> {
             }
             Ok(())
         }
+        Commands::Prune { force } => crate::prune::run(&config, force),
         Commands::Status => {
             crate::status::print_status();
             println!();
