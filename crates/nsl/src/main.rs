@@ -8,6 +8,7 @@ mod certs;
 mod cli;
 mod config;
 mod discover;
+mod doctor;
 mod error;
 mod hosts;
 mod npx_guard;

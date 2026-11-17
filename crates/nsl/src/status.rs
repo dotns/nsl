@@ -53,13 +53,32 @@ fn read_proxy_port(state_dir: &Path) -> Option<u16> {
 }
 
 /// Check if TLS marker exists in the state directory.
-fn read_tls_marker(state_dir: &Path) -> bool {
+pub(crate) fn read_tls_marker(state_dir: &Path) -> bool {
     state_dir.join("proxy.tls").exists()
 }
 
 /// Check if a process is alive.
 fn is_alive(pid: u32) -> bool {
     crate::platform::is_process_alive(pid)
+}
+
+/// Read the proxy PID and port files.
+pub(crate) fn read_proxy_files(state_dir: &Path) -> crate::doctor::ProxyFiles {
+    let pid = read_proxy_pid(state_dir);
+    crate::doctor::ProxyFiles {
+        pid,
+        pid_alive: pid.is_some_and(is_alive),
+        port: read_proxy_port(state_dir),
+    }
+}
+
+/// Count problems detectable from lifecycle files alone: a stale PID file, or
+/// a live proxy on a port other than the configured one.
+pub fn status_issue_count(state_dir: &Path, configured_port: u16) -> usize {
+    let files = read_proxy_files(state_dir);
+    let stale = files.pid.is_some() && !files.pid_alive;
+    let mismatch = files.pid_alive && files.port.is_some_and(|p| p != configured_port);
+    usize::from(stale) + usize::from(mismatch)
 }
 
 /// Get the uptime in seconds from a PID file's mtime.
@@ -303,6 +322,28 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         fs::write(tmp.path().join("proxy.port"), "1355").unwrap();
         assert_eq!(read_proxy_port(tmp.path()), Some(1355));
+    }
+
+    #[test]
+    fn test_status_issue_count() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        assert_eq!(status_issue_count(tmp.path(), 3355), 0);
+
+        let me = std::process::id();
+        fs::write(tmp.path().join("proxy.pid"), me.to_string()).unwrap();
+        fs::write(tmp.path().join("proxy.port"), "3355").unwrap();
+        assert_eq!(status_issue_count(tmp.path(), 3355), 0);
+        assert_eq!(status_issue_count(tmp.path(), 8080), 1);
+
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("--help")
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        let dead = child.id();
+        child.wait().unwrap();
+        fs::write(tmp.path().join("proxy.pid"), dead.to_string()).unwrap();
+        assert_eq!(status_issue_count(tmp.path(), 3355), 1);
     }
 
     #[test]

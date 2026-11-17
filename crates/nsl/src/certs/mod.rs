@@ -4,7 +4,7 @@ mod trust;
 
 pub use generate::{generate_ca, generate_host_cert, generate_server_cert};
 pub use sni::SniCertResolver;
-pub use trust::{TrustResult, trust_ca};
+pub use trust::{TrustResult, is_ca_trusted, trust_ca};
 
 use std::fs;
 use std::path::{Path, PathBuf};
