@@ -181,6 +181,24 @@ mod tests {
         assert!(generate_host_cert(tmp.path(), "foo/bar").is_err());
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn test_generate_host_cert_under_symlinked_state_dir() {
+        let tmp = TempDir::new().unwrap();
+        let real = tmp.path().join("real");
+        fs::create_dir(&real).unwrap();
+        let link = tmp.path().join("link");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        generate_ca(&link).unwrap();
+        // Create host-certs first so its canonical path differs from the
+        // not-yet-existing cert file path.
+        fs::create_dir_all(link.join(HOST_CERTS_DIR)).unwrap();
+
+        let (cert_path, key_path) = generate_host_cert(&link, "hello.localhost").unwrap();
+        assert!(cert_path.exists());
+        assert!(key_path.exists());
+    }
+
     #[test]
     fn test_generate_ca_creates_files() {
         let tmp = TempDir::new().unwrap();
