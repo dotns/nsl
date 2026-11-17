@@ -4,7 +4,7 @@ mod trust;
 
 pub use generate::{generate_ca, generate_host_cert, generate_server_cert};
 pub use sni::SniCertResolver;
-pub use trust::{TrustResult, is_ca_trusted, trust_ca};
+pub use trust::{TrustResult, ca_trust_status, trust_ca, windows_trust_command};
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -151,6 +151,11 @@ pub(super) fn load_certified_key(
     let signing_key = rustls::crypto::ring::sign::any_ecdsa_type(&key_der)?;
 
     Ok(CertifiedKey::new(certs, signing_key))
+}
+
+/// Path of the local CA certificate in the state directory.
+pub fn ca_cert_path(state_dir: &Path) -> PathBuf {
+    state_dir.join(CA_CERT_FILE)
 }
 
 /// Assert that a constructed path is a file directly inside `parent`.

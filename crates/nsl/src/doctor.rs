@@ -212,13 +212,24 @@ fn check_proxy(probe: ProxyProbe, configured: u16, files: &ProxyFiles) -> Vec<Fi
 }
 
 fn check_ca(state_dir: &Path) -> Finding {
-    if crate::certs::is_ca_trusted(state_dir) {
-        Finding::ok("local CA is trusted")
-    } else {
-        Finding::warn(
+    ca_finding(
+        crate::certs::ca_trust_status(state_dir),
+        &crate::certs::ca_cert_path(state_dir),
+    )
+}
+
+fn ca_finding(trusted: Option<bool>, ca_cert_path: &Path) -> Finding {
+    match trusted {
+        Some(true) => Finding::ok("local CA is trusted"),
+        Some(false) => Finding::warn(
             "HTTPS is enabled but the local CA is not trusted",
             "sudo nsl trust",
-        )
+        ),
+        None => Finding::new(
+            Level::Info,
+            "CA trust cannot be checked on Windows",
+            Some(&crate::certs::windows_trust_command(ca_cert_path)),
+        ),
     }
 }
 
@@ -450,6 +461,27 @@ mod tests {
         assert_eq!(json["findings"][1]["level"], "warn");
         assert_eq!(json["findings"][1]["hint"], "fix b");
         assert!(json["findings"][0].get("hint").is_none());
+    }
+
+    #[test]
+    fn ca_finding_levels() {
+        let path = std::path::Path::new("/state/ca.pem");
+        let unknown = ca_finding(None, path);
+        assert_eq!(unknown.level, Level::Info);
+        assert!(
+            unknown
+                .hint
+                .as_deref()
+                .unwrap()
+                .contains("certutil -user -addstore Root")
+        );
+        assert!(unknown.hint.as_deref().unwrap().contains("/state/ca.pem"));
+
+        let untrusted = ca_finding(Some(false), path);
+        assert_eq!(untrusted.level, Level::Warn);
+        assert_eq!(untrusted.hint.as_deref(), Some("sudo nsl trust"));
+
+        assert_eq!(ca_finding(Some(true), path).level, Level::Ok);
     }
 
     #[test]
