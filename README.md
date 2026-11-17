@@ -43,6 +43,14 @@ Via npm (picks the right prebuilt binary for your OS/arch; works on Windows too)
 npm i -g @dotns/nsl
 ```
 
+A global install is the recommended setup. If you don't want every contributor to install `nsl` globally, add it as a dev dependency instead; package scripts then resolve `node_modules/.bin/nsl`, so `"dev": "nsl run ..."` works after a plain `npm install`:
+
+```bash
+npm i -D @dotns/nsl      # or: pnpm add -D @dotns/nsl / bun add -d @dotns/nsl
+```
+
+Don't run it through `npx nsl` or `pnpm dlx nsl`: temporary package paths can break the background proxy once the runner exits.
+
 From source:
 
 ```bash
@@ -80,6 +88,37 @@ Set `NSL=0` or `NSL=skip` to opt out of registration for a single invocation.
 ```
 
 Commit that once and every contributor gets the same URL for the service.
+
+## Monorepos
+
+`nsl` doesn't orchestrate processes itself. Let your package manager or task runner start the apps, and give each app's `dev` script its own `nsl run --name`.
+
+**One hostname, web at `/` and API at `/api`** — the web app calls the API with relative URLs like `fetch("/api/users")`, so there is no CORS setup and cookies are same-origin:
+
+```text
+shop/
+├── package.json          "dev": "pnpm -r --parallel dev"
+├── apps/web/package.json "dev": "nsl run --name shop vite"
+└── apps/api/package.json "dev": "nsl run --name shop:/api --strip node server.js"
+```
+
+```bash
+pnpm dev
+# web -> http://shop.localhost:3355
+# api -> http://shop.localhost:3355/api
+```
+
+With `--strip`, the API receives `/users` for a browser request to `/api/users`. Leave it off when the API's own routes already start with `/api`. Bun workspaces work the same way with `bun run --filter '*' dev`.
+
+**Independent apps, one hostname each** — with Turborepo (or `pnpm -r`), each package runs `nsl run` and gets a name inferred from its `package.json`:
+
+```text
+apps/admin/package.json   "dev": "nsl run next dev"    -> http://admin.localhost:3355
+apps/docs/package.json    "dev": "nsl run astro dev"   -> http://docs.localhost:3355
+package.json              "dev": "turbo dev"
+```
+
+Packages without a server (`tsc --watch`, library builds) keep their plain `dev` script. To avoid a global install for every contributor, add `nsl` as a dev dependency at the workspace root (see [Install](#install)).
 
 ## Application lifecycle
 
@@ -203,7 +242,15 @@ sudo nsl trust          # install the local CA (once per machine)
 nsl start --https
 ```
 
-The CA is generated on first run and trusted on macOS (Keychain), Linux (`update-ca-certificates` / NSS), and Windows (`certutil`). Firefox keeps its own trust store — import the CA manually there. Per-hostname leaf certs are generated on demand from the first SNI handshake and cached under `certs/`.
+The CA is generated on first run. `nsl trust` adds it to the system trust store on macOS (Keychain) and Linux (`update-ca-certificates` / `update-ca-trust` / `trust`). Firefox keeps its own trust store — import the CA manually there. Per-hostname leaf certs are generated on demand from the first SNI handshake and cached under `host-certs/` in the state directory.
+
+**Windows:** automatic install is not supported yet. Run `nsl trust`; it prints a `certutil` command with the CA path for your machine. Run that command — it imports into your user's trust store, no admin needed:
+
+```text
+certutil -user -addstore Root "<state dir>\ca.pem"
+```
+
+The state directory defaults to `%USERPROFILE%\.nsl`. Browsers then accept the certificates. Windows' `curl.exe` also checks revocation, which a local CA cannot provide, so add `--ssl-no-revoke` when testing with it.
 
 ## Commands
 
@@ -216,6 +263,8 @@ nsl reload                     Stop + start, re-reading config.
 nsl logs [-n N] [--follow]     Print daemon log.
 nsl status                     Daemon state + routes + effective config.
 nsl list                       Active routes only.
+nsl doctor [--json]            Diagnose proxy, routes, HTTPS, and DNS problems.
+nsl prune [--force]            Stop apps left running after `nsl run` was killed.
 nsl route [NAME[:/PATH]] [PORT]   Register/remove a static route.
 nsl get <NAME[:/PATH]>         Print the URL for a name (for CI / scripts).
 nsl trust                      Install the local CA into the trust store.
@@ -291,6 +340,30 @@ nsl logs --follow
 
 Application output from `nsl run` is streamed to the current terminal and is not persisted by `nsl`.
 
+### Diagnostics
+
+When a URL does not load, run `nsl doctor`. It checks without changing anything and prints a fix for each problem:
+
+- the proxy is not running, or its port is taken by another program;
+- a stale PID file, or a running proxy whose port differs from the config (`nsl reload`);
+- HTTPS is enabled but the local CA is not trusted;
+- a route whose target port has no listener;
+- a host with only path routes (`shop:/api`) and no `/` route;
+- custom domains that do not resolve to loopback (`sudo nsl hosts sync`). Domains with a `[proxy.display]` override are skipped.
+
+`nsl doctor --json` prints the report as JSON. The exit code is `1` when any check fails. `nsl status` points to `nsl doctor` when it notices a stale PID file or a port mismatch.
+
+### Orphaned apps
+
+`nsl run` stops its app when it receives Ctrl-C, `SIGTERM`, or `SIGHUP` (closing the terminal). If `nsl run` itself is killed with `SIGKILL`, the app can keep running and keep its route. `nsl prune` finds such apps, verifies they are the processes `nsl run` started, stops them with `SIGTERM`, and removes their routes.
+
+```bash
+nsl prune           # SIGTERM, wait up to 3s
+nsl prune --force   # also SIGKILL apps that ignore SIGTERM
+```
+
+When `nsl run` runs under a task runner (no TTY), the app shares the runner's process group, so `nsl prune` signals only the app's top-level process. Routes registered by older `nsl` versions are not eligible.
+
 ### Static routes for non-`nsl` processes
 
 `nsl route` registers a route for something you didn't start through `nsl` — a Docker container, a compiled binary, a service on another host.
@@ -312,7 +385,7 @@ target as `/users`.
 | `-s, --strip`         | Strip the matched path prefix before forwarding.          |
 | `-c, --change-origin` | Rewrite the outgoing `Host` header to the target address. |
 
-> **Reserved words:** `run`, `serve`, `start`, `stop`, `reload`, `logs`, `route`, `get`, `list`, `status`, `trust`, `hosts`. Use `nsl run --name <name> <cmd>` if a reserved word collides with your project name.
+> **Reserved words:** `run`, `serve`, `start`, `stop`, `reload`, `logs`, `route`, `get`, `list`, `status`, `doctor`, `prune`, `trust`, `hosts`. Use `nsl run --name <name> <cmd>` if a reserved word collides with your project name.
 
 ## Configuration
 
@@ -465,14 +538,29 @@ sudo rm -rf /tmp/nsl      # only if you ran the proxy on a privileged port
 npm uninstall -g @dotns/nsl
 ```
 
-If you plan to use HTTPS again afterward, re-run `sudo nsl trust` — the old CA was wiped with the state directory.
+If you ran `sudo nsl trust` (or imported the CA on Windows), also remove the CA from the system trust store. Deleting `~/.nsl` does not untrust it:
+
+```bash
+# macOS
+security delete-certificate -c "nsl Local CA"
+# Debian / Ubuntu
+sudo rm /usr/local/share/ca-certificates/nsl-ca.crt && sudo update-ca-certificates --fresh
+# Fedora / RHEL
+sudo rm /etc/pki/ca-trust/source/anchors/nsl-ca.pem && sudo update-ca-trust
+# Arch
+sudo rm /etc/ca-certificates/trust-source/anchors/nsl-ca.pem && sudo trust extract-compat
+# Windows (if you imported it with certutil)
+certutil -user -delstore Root "nsl Local CA"
+```
+
+If you imported the CA into Firefox manually, remove "nsl Local CA" under Settings → Certificates. To use HTTPS again afterward, re-run `sudo nsl trust`; a new CA is generated.
 
 ## Troubleshooting
 
 - **"proxy is not running"** after `nsl route` — `nsl run` auto-starts the proxy, but `nsl route` does not. Run `nsl start` once.
 - **Port already in use** — something else holds `3355`. Change with `nsl start --listen 127.0.0.1:8080` or `[proxy].listen = "127.0.0.1:8080"`.
 - **`.localhost` doesn't resolve on Linux** — glibc resolves `*.localhost` by default, but a few minimal distros strip the rule. Either restore it in `/etc/nsswitch.conf` or switch to `sudo nsl hosts sync` with a custom suffix.
-- **Browser says the HTTPS cert isn't trusted** — run `sudo nsl trust`. For Firefox on Linux, import the CA manually (Firefox uses its own NSS database).
+- **Browser says the HTTPS cert isn't trusted** — run `sudo nsl trust`. On Windows, run the `certutil` command that `nsl trust` prints. For Firefox on Linux, import the CA manually (Firefox uses its own NSS database).
 - **WebSocket / HTTP/2** — transparently upgraded; no special flag.
 
 ## Acknowledgements
