@@ -13,7 +13,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio_rustls::TlsAcceptor;
 
 use crate::config::Config;
-use crate::routes::{RouteMapping, RouteStore};
+use crate::routes::{RouteMapping, RouteStore, is_route_live};
 use crate::utils::fix_ownership;
 
 use super::handler::handle_request;
@@ -77,7 +77,8 @@ fn file_mtime(path: &Path) -> Option<SystemTime> {
 
 /// Spawn a background task that polls routes.json mtime every
 /// `ROUTE_POLL_INTERVAL_SECS` seconds. When the mtime changes (or the file
-/// is created/deleted), the task reloads routes into the shared cache.
+/// is created/deleted), the task reloads routes into the shared cache;
+/// otherwise it drops cached routes whose owner is no longer live.
 fn spawn_route_poller(state_dir: PathBuf, cache: RouteCache) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let routes_path = state_dir.join("routes.json");
@@ -96,6 +97,8 @@ fn spawn_route_poller(state_dir: PathBuf, cache: RouteCache) -> tokio::task::Joi
                 let mut w = cache.write().await;
                 *w = new_routes;
                 last_mtime = current_mtime;
+            } else if !cache.read().await.iter().all(is_route_live) {
+                cache.write().await.retain(is_route_live);
             }
         }
     })

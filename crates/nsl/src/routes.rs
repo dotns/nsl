@@ -53,6 +53,26 @@ pub struct RouteOwner {
     pub start_time: Option<u64>,
 }
 
+/// Whether a route's owner is still the recorded process.
+///
+/// Static routes are always live. A dynamic route is dead when its PID is gone,
+/// or when the recorded start time differs from the current one (PID reuse).
+/// An unreadable start time cannot be verified and keeps the route.
+pub fn is_route_live(route: &RouteMapping) -> bool {
+    if route.pid == 0 {
+        return true;
+    }
+    if !is_process_alive(route.pid) {
+        return false;
+    }
+    match route.owner.as_ref().and_then(|o| o.start_time) {
+        Some(expected) => {
+            crate::platform::current_process_start_time(route.pid).is_none_or(|t| t == expected)
+        }
+        None => true,
+    }
+}
+
 fn default_path_prefix() -> String {
     "/".to_string()
 }
@@ -110,10 +130,7 @@ impl RouteStore {
         let raw = fs::read_to_string(&self.routes_path)?;
         let routes: Vec<RouteMapping> = serde_json::from_str(&raw)?;
 
-        let alive: Vec<RouteMapping> = routes
-            .into_iter()
-            .filter(|r| r.pid == 0 || is_process_alive(r.pid))
-            .collect();
+        let alive: Vec<RouteMapping> = routes.into_iter().filter(is_route_live).collect();
 
         Ok(alive)
     }
@@ -547,5 +564,86 @@ mod tests {
         assert_eq!(routes.len(), 1);
         assert_eq!(routes[0].path_prefix, "/");
         assert!(!routes[0].strip_prefix);
+    }
+
+    fn test_route(pid: u32, owner: Option<RouteOwner>) -> RouteMapping {
+        RouteMapping {
+            hostname: "myapp.localhost".to_string(),
+            port: 4000,
+            pid,
+            change_origin: false,
+            path_prefix: "/".to_string(),
+            strip_prefix: false,
+            owner,
+        }
+    }
+
+    fn dead_pid() -> u32 {
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("--help")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        let pid = child.id();
+        child.wait().unwrap();
+        pid
+    }
+
+    #[test]
+    fn test_is_route_live_static_route() {
+        assert!(is_route_live(&test_route(0, None)));
+    }
+
+    #[test]
+    fn test_is_route_live_dead_pid() {
+        let pid = dead_pid();
+        assert!(!is_route_live(&test_route(pid, Some(test_owner(pid)))));
+    }
+
+    #[test]
+    fn test_is_route_live_owner_without_start_time() {
+        let pid = std::process::id();
+        assert!(is_route_live(&test_route(pid, Some(test_owner(pid)))));
+        assert!(is_route_live(&test_route(pid, None)));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_is_route_live_start_time_match() {
+        let pid = std::process::id();
+        let mut owner = test_owner(pid);
+        owner.start_time = crate::platform::current_process_start_time(pid);
+        assert!(owner.start_time.is_some());
+        assert!(is_route_live(&test_route(pid, Some(owner))));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_is_route_live_reused_pid() {
+        let pid = std::process::id();
+        let mut owner = test_owner(pid);
+        owner.start_time = crate::platform::current_process_start_time(pid).map(|t| t + 1);
+        assert!(!is_route_live(&test_route(pid, Some(owner))));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_load_routes_drops_reused_pid() {
+        let tmp = TempDir::new().unwrap();
+        let store = RouteStore::new(tmp.path().to_path_buf());
+        store.ensure_dir().unwrap();
+
+        let pid = std::process::id();
+        let mut owner = test_owner(pid);
+        owner.start_time = crate::platform::current_process_start_time(pid).map(|t| t + 1);
+        let mut kept = test_route(0, None);
+        kept.hostname = "static.localhost".to_string();
+        let routes = vec![test_route(pid, Some(owner)), kept];
+        std::fs::write(store.routes_path(), serde_json::to_string(&routes).unwrap()).unwrap();
+
+        let loaded = store.load_routes().unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].hostname, "static.localhost");
     }
 }
