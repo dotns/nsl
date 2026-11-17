@@ -29,3 +29,9 @@ tmp/
 # core dumps
 core
 core.*
+
+# agent scratch
+.tmp/
+
+# local project tracking
+docs/
