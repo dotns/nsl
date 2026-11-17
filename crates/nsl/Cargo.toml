@@ -28,10 +28,9 @@ hyper = { version = "1", features = ["full"] }
 hyper-util = { version = "0.1", features = ["full"] }
 http-body-util = "0.1"
 tower = { version = "0.5", features = ["util"] }
-tower-http = { version = "0.6", features = ["fs"] }
+tower-http = { version = "0.7", features = ["fs"] }
 percent-encoding = "2"
-dirs = "6"
-process-wrap = { version = "9.1.0", features = ["tokio1"] }
+process-wrap = { version = "10.0.1", features = ["tokio1"] }
 rcgen.workspace = true
 rustls.workspace = true
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging", "tls12"] }
@@ -41,11 +40,11 @@ time = "0.3"
 bytes = "1"
 
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.31.2", features = ["signal", "process", "user", "fs"] }
+nix = { version = "0.32.0", features = ["signal", "process", "user", "fs"] }
 daemonize = "0.5"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = [
+windows-sys = { version = "0.61", features = [
   "Win32_Foundation",
   "Win32_System_Diagnostics_ToolHelp",
   "Win32_System_Threading",
